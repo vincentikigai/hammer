@@ -1,5 +1,5 @@
 $interval = 10
-$logfile = "ip_log.txt"
+$logfile = "ip_log.csv"
 
 $currentIP = ""
 $startTime = Get-Date
@@ -12,20 +12,37 @@ function Get-IP {
     }
 }
 
+function Get-Ping {
+    try {
+        $ping = Test-Connection -ComputerName 8.8.8.8 -Count 1 -ErrorAction Stop
+        return $ping.ResponseTime
+    } catch {
+        return "timeout"
+    }
+}
+
+if (!(Test-Path $logfile)) {
+    "start_time,end_time,ip,duration_seconds,last_latency_ms" | Out-File $logfile
+}
+
 while ($true) {
+
     $ip = Get-IP
     $now = Get-Date
+    $latency = Get-Ping
 
     if ($ip -ne $currentIP) {
 
         if ($currentIP -ne "") {
-            $duration = $now - $startTime
-            "$startTime -> $now  IP:$currentIP  Duration:$duration" | Out-File -Append $logfile
+
+            $duration = ($now - $startTime).TotalSeconds
+
+            "$startTime,$now,$currentIP,$duration,$latency" | Out-File -Append $logfile
         }
 
         $currentIP = $ip
         $startTime = $now
-        Write-Host "$now New IP: $ip"
+        Write-Host "$now  New IP: $ip  latency:$latency ms"
     }
 
     Start-Sleep -Seconds $interval
