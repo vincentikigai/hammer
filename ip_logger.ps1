@@ -22,7 +22,8 @@ function Get-Ping {
 }
 
 if (!(Test-Path $logfile)) {
-    "start_time,end_time,ip,duration_seconds,last_latency_ms" | Out-File $logfile
+    "start_time,end_time,ip,duration_seconds,last_latency_ms" |
+        Out-File $logfile -Encoding UTF8
 }
 
 while ($true) {
@@ -37,7 +38,8 @@ while ($true) {
 
             $duration = ($now - $startTime).TotalSeconds
 
-            "$startTime,$now,$currentIP,$duration,$latency" | Out-File -Append $logfile
+            "$startTime,$now,$currentIP,$duration,$latency" |
+                Out-File -Append $logfile -Encoding UTF8
         }
 
         $currentIP = $ip
