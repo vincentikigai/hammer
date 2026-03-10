@@ -5,7 +5,12 @@ param(
 Write-Host "Script started" -ForegroundColor Green
 
 $interval = 10
-$logfile = "ip_log.csv"
+$docsPath = [Environment]::GetFolderPath('MyDocuments')
+$monitorPath = Join-Path $docsPath "monitor"
+if (-not (Test-Path $monitorPath)) {
+    New-Item -ItemType Directory -Path $monitorPath -Force | Out-Null
+}
+$logfile = Join-Path $monitorPath "ip_log.csv"
 
 $currentIP = ""
 $currentDNS = ""
