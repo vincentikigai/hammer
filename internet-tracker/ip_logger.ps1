@@ -22,6 +22,25 @@ if ((Test-Path $logfile) -and ((Get-Item $logfile).Length -gt 0)) {
 $dummyIPs = @('1.1.1.1','2.2.2.2','3.3.3.3','4.4.4.4')
 $dummyIndex = 0
 
+function Update-LastRecord {
+    param(
+        [DateTime]$endTime,
+        [double]$duration
+    )
+    $lines = Get-Content $logfile -Encoding UTF8
+    if ($lines.Count -gt 1) {
+        $lastLine = $lines[-1]
+        $parts = $lastLine -split ','
+        if ($endTime) {
+            $parts[1] = $endTime.ToString("yyyy-MM-dd HH:mm:ss")
+        }
+        if ($duration -ge 0) {
+            $parts[4] = $duration.ToString()
+        }
+        $lines[-1] = $parts -join ','
+        $lines | Out-File $logfile -Encoding UTF8
+    }
+}
 
 function Get-IP {
     if ($Dummy) {
@@ -68,6 +87,21 @@ if (!(Test-Path $logfile) -or ((Get-Item $logfile).Length -eq 0)) {
         Out-File $logfile -Encoding UTF8
 }
 
+# Resume from previous session if applicable
+if ($resuming) {
+    $lines = Get-Content $logfile -Encoding UTF8
+    if ($lines.Count -gt 1) {
+        $lastLine = $lines[-1]
+        $parts = $lastLine -split ','
+        if ([string]::IsNullOrEmpty($parts[1])) {  # end_time is empty
+            $currentIP = $parts[2]
+            $currentDNS = $parts[3]
+            $startTime = [DateTime]::Parse($parts[0])
+            Write-Host "Resumed from incomplete record: IP=$currentIP, DNS=$currentDNS, Start=$startTime" -ForegroundColor Cyan
+        }
+    }
+}
+
 try {
     while ($true) {
 
@@ -82,19 +116,24 @@ try {
             Write-Host "Change detected: IP changed from [$currentIP] to [$ip], DNS changed from [$currentDNS] to [$dns]" -ForegroundColor Green
 
             if ($currentIP -ne "") {
-
-                $duration = ($now - $startTime).TotalSeconds
-                $durationMinutes = [math]::Round($duration/60,2)
-
-                "$startTime,$now,$currentIP,$currentDNS,$durationMinutes,$latency" |
-                    Out-File -Append $logfile -Encoding UTF8
-                Write-Host "Saved record to file" -ForegroundColor Green
+                $duration = [math]::Round(($now - $startTime).TotalMinutes, 2)
+                Update-LastRecord -endTime $now -duration $duration
+                Write-Host "Updated previous record with end time and duration" -ForegroundColor Green
             }
+
+            # Save new record with empty end_time
+            "$now,,$ip,$dns,,$latency" | Out-File -Append $logfile -Encoding UTF8
+            Write-Host "Saved new record to file" -ForegroundColor Green
 
             $currentIP = $ip
             $currentDNS = $dns
             $startTime = $now
             Write-Host "$now  New IP: $ip  DNS: $dns  latency:$latency ms"
+        } else {
+            # Update current record duration
+            $duration = [math]::Round(($now - $startTime).TotalMinutes, 2)
+            Update-LastRecord -duration $duration
+            Write-Host "Updated current record duration: $duration minutes" -ForegroundColor Cyan
         }
 
         Start-Sleep -Seconds $interval
@@ -104,11 +143,8 @@ finally {
     # Save the current session if script is terminated
     if ($currentIP -ne "") {
         $now = Get-Date
-        $duration = ($now - $startTime).TotalSeconds
-        $durationMinutes = [math]::Round($duration/60,2)
-        
-        "$startTime,$now,$currentIP,$currentDNS,$durationMinutes,$latency" |
-            Out-File -Append $logfile -Encoding UTF8
-        Write-Host "Script terminated. Saved final record to file." -ForegroundColor Yellow
+        $duration = [math]::Round(($now - $startTime).TotalMinutes, 2)
+        Update-LastRecord -endTime $now -duration $duration
+        Write-Host "Script terminated. Updated final record with end time and duration." -ForegroundColor Yellow
     }
 }
