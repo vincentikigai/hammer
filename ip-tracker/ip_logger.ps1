@@ -14,6 +14,7 @@ $logfile = Join-Path $monitorPath "ip_log.csv"
 
 $currentIP = ""
 $currentDNS = ""
+$currentCountry = ""
 $startTime = Get-Date
 
 # Check if we're resuming from a previous session
@@ -86,9 +87,20 @@ function Get-DNS {
     }
 }
 
+function Get-Country {
+    param([string]$IP)
+    if ($Dummy) { return "DummyCountry" }
+    if ([string]::IsNullOrWhiteSpace($IP)) { return "" }
+    try {
+        $info = Invoke-RestMethod -Uri "http://ip-api.com/json/$IP"
+        if ($info.status -eq "success") { return $info.country }
+    } catch { }
+    return "unknown"
+}
+
 if (!(Test-Path $logfile) -or ((Get-Item $logfile).Length -eq 0)) {
     Write-Host "Creating new log file with header." -ForegroundColor Cyan
-    "start_time,end_time,ip,dns_servers,duration_minutes,last_latency_ms" |
+    "start_time,end_time,ip,dns_servers,duration_minutes,last_latency_ms,country" |
         Out-File $logfile -Encoding UTF8
 }
 
@@ -101,8 +113,11 @@ if ($resuming) {
         if ([string]::IsNullOrEmpty($parts[1])) {  # end_time is empty
             $currentIP = $parts[2]
             $currentDNS = $parts[3]
+            if ($parts.Count -gt 6) {
+                $currentCountry = $parts[6]
+            }
             $startTime = [DateTime]::Parse($parts[0])
-            Write-Host "Resumed from incomplete record: IP=$currentIP, DNS=$currentDNS, Start=$startTime" -ForegroundColor Cyan
+            Write-Host "Resumed from incomplete record: IP=$currentIP, DNS=$currentDNS, Country=$currentCountry, Start=$startTime" -ForegroundColor Cyan
         }
     }
 }
@@ -118,7 +133,8 @@ try {
         Write-Host "Current IP: $ip | Previous IP: $currentIP | DNS: $dns" -ForegroundColor Yellow
 
         if ($ip -ne $currentIP -or $dns -ne $currentDNS) {
-            Write-Host "Change detected: IP changed from [$currentIP] to [$ip], DNS changed from [$currentDNS] to [$dns]" -ForegroundColor Green
+            $country = Get-Country -IP $ip
+            Write-Host "Change detected: IP changed from [$currentIP] to [$ip], DNS changed from [$currentDNS] to [$dns], Country: [$country]" -ForegroundColor Green
 
             if ($currentIP -ne "") {
                 $duration = [math]::Round(($now - $startTime).TotalMinutes, 2)
@@ -127,13 +143,14 @@ try {
             }
 
             # Save new record with empty end_time
-            "$now,,$ip,$dns,,$latency" | Out-File -Append $logfile -Encoding UTF8
+            "$now,,$ip,$dns,,$latency,$country" | Out-File -Append $logfile -Encoding UTF8
             Write-Host "Saved new record to file" -ForegroundColor Green
 
             $currentIP = $ip
             $currentDNS = $dns
+            $currentCountry = $country
             $startTime = $now
-            Write-Host "$now  New IP: $ip  DNS: $dns  latency:$latency ms"
+            Write-Host "$now  New IP: $ip  DNS: $dns  Country: $country  latency:$latency ms"
         } else {
             # Update current record duration
             $duration = [math]::Round(($now - $startTime).TotalMinutes, 2)
