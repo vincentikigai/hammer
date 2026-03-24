@@ -6,7 +6,7 @@ A lightweight PowerShell-based utility to monitor user activity and log work ses
 - **Automatic Activity Detection**: Tracks work sessions based on system input (mouse/keyboard).
 - **Session Logging**: Detailed logs of session start, end, and duration stored in JSON.
 - **CSV Export**: Automatically exports a flat `work_sessions.csv` file for easy analysis in Excel or Google Sheets.
-- **Reporting**: Automatically generates daily summaries of work hours in text format.
+- **Markdown Reporting**: Generates beautiful daily summaries in Markdown (`.md`) with tables and break tracking.
 - **Background Execution**: Can be run silently via the provided batch script.
 - **Testable**: Supports a dedicated test mode and Pester unit tests.
 

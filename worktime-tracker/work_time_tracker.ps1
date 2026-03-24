@@ -61,15 +61,24 @@ function ConvertTo-Hashtable {
 
 # Load or init data
 function Load-Data {
+    $defaultData = @{
+        sessions = @()
+        dailyStats = @{}
+        activeSession = $null
+    }
     if (Test-Path $logFile) {
-        $raw = Get-Content $logFile -Raw | ConvertFrom-Json
-        return ConvertTo-Hashtable $raw
-    } else {
-        return @{
-            sessions = @()
-            dailyStats = @{}
-            activeSession = $null
+        $content = Get-Content $logFile -Raw
+        if ([string]::IsNullOrWhiteSpace($content)) { return $defaultData }
+        $raw = $content | ConvertFrom-Json
+        if ($null -eq $raw) { return $defaultData }
+        $data = ConvertTo-Hashtable $raw
+        # Ensure properties exist
+        foreach ($key in $defaultData.Keys) {
+            if (-not $data.ContainsKey($key)) { $data[$key] = $defaultData[$key] }
         }
+        return $data
+    } else {
+        return $defaultData
     }
 }
 
@@ -120,43 +129,47 @@ function Generate-DailyReport {
     param($date, $sessions)
     if (-not $sessions) { return 0 }
     
-    # Sort sessions by start time just in case
-    $sortedSessions = $sessions | Sort-Object { $_.start }
+    # Ensure sessions are sorted and treated as objects
+    $objSessions = @($sessions | ForEach-Object { [PSCustomObject]$_ })
+    $sortedSessions = @($objSessions | Sort-Object { $_.start })
     
-    $durations = @($sortedSessions | ForEach-Object { $_.duration })
-    $totalSeconds = ($durations | Measure-Object -Sum).Sum
-    $sessionCount = $sortedSessions.Count
+    $totalSeconds = ($sortedSessions | Measure-Object -Property duration -Sum).Sum
+    $sessionCount = $sortedSessions.Length
     
-    $report = "Work Time Report - $date`nTotal: $(Format-Duration $totalSeconds)`nSessions: $sessionCount`n"
+    # Markdown Header
+    $report = "# Work Time Report - $date`n`n"
+    $report += "- **Total Duration**: $(Format-Duration $totalSeconds)`n"
+    $report += "- **Total Sessions**: $sessionCount`n`n"
+    $report += "## Session Details`n`n"
+    $report += "| Start | End | Duration |`n"
+    $report += "| :--- | :--- | :--- |`n"
     
     for ($i = 0; $i -lt $sortedSessions.Count; $i++) {
         $current = $sortedSessions[$i]
-        $report += "`n$($current.start) - $($current.end) | $($current.durationHms)"
         
-        # Calculate Break
+        # Add Session Row
+        $start = if ($current.start) { $current.start } else { "---" }
+        $end = if ($current.end) { $current.end } else { "---" }
+        $hms = if ($current.durationHms) { $current.durationHms } else { Format-Duration $current.duration }
+        
+        $report += "| $start | $end | **$hms** |`n"
+        
+        # Add Break Row
         if ($i -lt ($sortedSessions.Count - 1)) {
             $next = $sortedSessions[$i + 1]
             try {
-                # Force string type and trim
-                $eStr = [string]($current.end).Trim()
-                $sStr = [string]($next.start).Trim()
-                
-                # Use a more flexible parse or explicit if possible
-                $eTime = [DateTime]$eStr
-                $sTime = [DateTime]$sStr
-                
+                $eTime = [DateTime]([string]$current.end).Trim()
+                $sTime = [DateTime]([string]$next.start).Trim()
                 $gap = ($sTime - $eTime).TotalSeconds
                 if ($gap -gt 0) {
-                    $report += "`n   --- Break: $(Format-Duration $gap) ---"
+                    $report += "| _Break_ | _$(Format-Duration $gap)_ | _Interruption_ |`n"
                 }
-            } catch {
-                # Silently skip if parse fails
-            }
+            } catch {}
         }
     }
     
-    $reportFile = "$DataFolder\report_$($date -replace '/','-').txt"
-    $report | Set-Content $reportFile
+    $reportFile = "$DataFolder\report_$($date -replace '/','-').md"
+    $report | Set-Content $reportFile -Encoding UTF8
     return $totalSeconds
 }
 
