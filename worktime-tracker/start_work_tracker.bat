@@ -1,13 +1,13 @@
 @echo off
-REM 工作时间统计 - 启动脚本
-REM 保存为: StartWorkTracker.bat
+REM Work Time Tracker - Start Script
+REM Filename: start_work_tracker.bat
 
-echo 正在启动工作时间统计程序...
+echo Starting Work Time Tracker...
 
-REM 以隐藏窗口方式运行 PowerShell 脚本
+REM Start PowerShell in the background with hidden window
 powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0work_time_tracker.ps1"
 
-REM 如果需要看到运行状态，使用下面这行（会显示控制台窗口）
+REM Uncomment the line below (and comment out the one above) to see the console window for debugging:
 REM powershell -ExecutionPolicy Bypass -File "%~dp0work_time_tracker.ps1"
 
 exit

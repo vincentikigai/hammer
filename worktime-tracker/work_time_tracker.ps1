@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# Work Time Tracker - Enhanced Version (Supports Test Mode & Shutdown Persistence)
+# Work Time Tracker - Enhanced Version (Supports Test Mode, Startup Recovery & Readable JSON)
 # Save as: WorkTimeTracker.ps1
 
 param(
@@ -27,6 +27,16 @@ $logFile = "$DataFolder\work_log.json"
 # Create folder
 if (-not (Test-Path $DataFolder)) {
     New-Item -ItemType Directory -Path $DataFolder | Out-Null
+}
+
+# Helper: Convert seconds to Time (HH:mm:ss)
+function Format-Duration {
+    param($seconds)
+    $totalSeconds = [int]$seconds
+    $hours = [Math]::Floor($totalSeconds / 3600)
+    $minutes = [Math]::Floor(($totalSeconds % 3600) / 60)
+    $secs = $totalSeconds % 60
+    return "{0:D2}:{1:D2}:{2:D2}" -f [int]$hours, [int]$minutes, [int]$secs
 }
 
 # Helper: Convert PSCustomObject to Hashtable
@@ -58,7 +68,7 @@ function Load-Data {
         return @{
             sessions = @()
             dailyStats = @{}
-            activeSession = $null # Current session state for recovery
+            activeSession = $null
         }
     }
 }
@@ -66,6 +76,7 @@ function Load-Data {
 # Save data
 function Save-Data {
     param($data)
+    # ConvertTo-Json in PS produces pretty-printed JSON by default (indented)
     $data | ConvertTo-Json -Depth 10 | Set-Content $logFile
 }
 
@@ -97,16 +108,6 @@ try {
     Add-Type -TypeDefinition $typeDefinition -ErrorAction SilentlyContinue
 } catch {}
 
-# Format seconds to Time
-function Format-Duration {
-    param($seconds)
-    $totalSeconds = [int]$seconds
-    $hours = [Math]::Floor($totalSeconds / 3600)
-    $minutes = [Math]::Floor(($totalSeconds % 3600) / 60)
-    $secs = $totalSeconds % 60
-    return "{0:D2}:{1:D2}:{2:D2}" -f [int]$hours, [int]$minutes, [int]$secs
-}
-
 # Daily report generation
 function Generate-DailyReport {
     param($date, $sessions)
@@ -116,7 +117,7 @@ function Generate-DailyReport {
     $sessionCount = $sessions.Count
     $report = "Work Time Report - $date`nTotal: $(Format-Duration $totalSeconds)`nSessions: $sessionCount`n"
     foreach ($session in $sessions) {
-        $report += "`n$($session.start) - $($session.end) | $(Format-Duration $session.duration)"
+        $report += "`n$($session.start) - $($session.end) | $($session.durationHms)"
     }
     $reportFile = "$DataFolder\report_$($date -replace '/','-').txt"
     $report | Set-Content $reportFile
@@ -132,23 +133,21 @@ function Stop-TrackerGracefully {
         $duration = ($sessionEnd - $sessionStart).TotalSeconds
         if ($duration -gt 1) {
             $today = $now.ToString('yyyy-MM-dd')
-            $session = @{
-                start = $sessionStart.ToString('HH:mm:ss')
-                end = $sessionEnd.ToString('HH:mm:ss')
+            # Use Ordered Hashtable for readability
+            $session = [Ordered]@{
+                date     = $today
+                start    = $sessionStart.ToString('HH:mm:ss')
+                end      = $sessionEnd.ToString('HH:mm:ss')
                 duration = [int]$duration
+                durationHms = Format-Duration $duration
             }
-            if ($null -eq $data.dailyStats.$today) { $data.dailyStats[$today] = @{ sessions = @(); totalSeconds = 0 } }
+            if ($null -eq $data.dailyStats.$today) { $data.dailyStats[$today] = [Ordered]@{ sessions = @(); totalSeconds = 0; totalHms = "00:00:00" } }
             $data.dailyStats[$today].sessions += $session
-            $data.sessions += @{
-                date = $today
-                start = $sessionStart.ToString('yyyy-MM-dd HH:mm:ss')
-                end = $sessionEnd.ToString('yyyy-MM-dd HH:mm:ss')
-                duration = [int]$duration
-            }
+            $data.sessions += $session
             Write-Host "`n[SIG] Final session saved." -ForegroundColor Yellow
         }
     }
-    $data.activeSession = $null # Clear heartbeat for clean exit
+    $data.activeSession = $null
     Save-Data $data
     Write-Host "[SIG] Tracker stopped." -ForegroundColor Red
 }
@@ -163,23 +162,20 @@ function Start-Tracker {
     
     # --- Recovery Logic ---
     if ($data.activeSession) {
-        Write-Host ">>> Recovering unclosed session from $($data.activeSession.start)..." -ForegroundColor Magenta
+        Write-Host ">>> Recovering unclosed session from $($data.activeSession.startTime)..." -ForegroundColor Magenta
         $recSession = $data.activeSession
         $today = $recSession.date
-        if ($null -eq $data.dailyStats.$today) { $data.dailyStats[$today] = @{ sessions = @(); totalSeconds = 0 } }
+        if ($null -eq $data.dailyStats.$today) { $data.dailyStats[$today] = [Ordered]@{ sessions = @(); totalSeconds = 0; totalHms = "00:00:00" } }
         
-        $session = @{
-            start = $recSession.startTime
-            end = $recSession.lastHeartbeatTime
+        $session = [Ordered]@{
+            date     = $today
+            start    = $recSession.startTime
+            end      = $recSession.lastHeartbeatTime
             duration = [int]$recSession.duration
+            durationHms = Format-Duration $recSession.duration
         }
         $data.dailyStats[$today].sessions += $session
-        $data.sessions += @{
-            date = $today
-            start = "$today $($recSession.startTime)"
-            end = "$today $($recSession.lastHeartbeatTime)"
-            duration = [int]$recSession.duration
-        }
+        $data.sessions += $session
         $data.activeSession = $null
         Save-Data $data
         Write-Host ">>> Session recovered successfully." -ForegroundColor Green
@@ -197,9 +193,9 @@ function Start-Tracker {
         $now = Get-Date
         $today = $now.ToString('yyyy-MM-dd')
         
-        if ($null -eq $data.dailyStats) { $data.dailyStats = @{} }
+        if ($null -eq $data.dailyStats) { $data.dailyStats = [Ordered]@{} }
         if (-not $data.dailyStats.ContainsKey($today)) {
-            $data.dailyStats[$today] = @{ sessions = @(); totalSeconds = 0 }
+            $data.dailyStats[$today] = [Ordered]@{ sessions = @(); totalSeconds = 0; totalHms = "00:00:00" }
         }
         
         if ($idleSeconds -lt $InactivityThreshold) {
@@ -210,14 +206,15 @@ function Start-Tracker {
                 Write-Host "[$($now.ToString('HH:mm:ss'))] Session Start" -ForegroundColor Green
             }
             
-            # Heartbeat Save (every 30 seconds while working)
+            # Heartbeat Save (every 30 seconds)
             if ($now.Second % 30 -eq 0) {
                 $duration = ($now - $sessionStart).TotalSeconds
-                $data.activeSession = @{
+                $data.activeSession = [Ordered]@{
                     date = $today
                     startTime = $sessionStart.ToString('HH:mm:ss')
                     lastHeartbeatTime = $now.ToString('HH:mm:ss')
                     duration = [int]$duration
+                    durationHms = Format-Duration $duration
                 }
                 Save-Data $data
             }
@@ -229,21 +226,24 @@ function Start-Tracker {
                 $sessionEnd = $now.AddSeconds(-$InactivityThreshold)
                 $duration = ($sessionEnd - $sessionStart).TotalSeconds
                 if ($duration -gt 1) { 
-                    $session = @{
-                        start = $sessionStart.ToString('HH:mm:ss')
-                        end = $sessionEnd.ToString('HH:mm:ss')
+                    $session = [Ordered]@{
+                        date     = $today
+                        start    = $sessionStart.ToString('HH:mm:ss')
+                        end      = $sessionEnd.ToString('HH:mm:ss')
                         duration = [int]$duration
+                        durationHms = Format-Duration $duration
                     }
                     $data.dailyStats[$today].sessions += $session
                     if ($null -eq $data.sessions) { $data.sessions = @() }
-                    $data.sessions += @{
-                        date = $today
-                        start = $sessionStart.ToString('yyyy-MM-dd HH:mm:ss')
-                        end = $sessionEnd.ToString('yyyy-MM-dd HH:mm:ss')
-                        duration = [int]$duration
-                    }
+                    $data.sessions += $session
+                    
+                    # Update Total
+                    $sum = ($data.dailyStats[$today].sessions | ForEach-Object { $_.duration } | Measure-Object -Sum).Sum
+                    $data.dailyStats[$today].totalSeconds = [int]$sum
+                    $data.dailyStats[$today].totalHms = Format-Duration $sum
+                    
                     Write-Host "[$($now.ToString('HH:mm:ss'))] Session End - Duration: $(Format-Duration $duration)" -ForegroundColor Yellow
-                    $data.activeSession = $null # Clear heartbeat
+                    $data.activeSession = $null
                     Save-Data $data
                 }
                 $sessionStart = $null
@@ -254,7 +254,8 @@ function Start-Tracker {
         if (($now - $lastSaveTime).TotalMinutes -gt $ReportIntervalMinutes) {
             if ($data.dailyStats[$today].sessions.Count -gt 0) {
                 $totalSeconds = Generate-DailyReport $today $data.dailyStats[$today].sessions
-                $data.dailyStats[$today].totalSeconds = $totalSeconds
+                $data.dailyStats[$today].totalSeconds = [int]$totalSeconds
+                $data.dailyStats[$today].totalHms = Format-Duration $totalSeconds
                 Save-Data $data
                 Write-Host "[$($now.ToString('HH:mm:ss'))] Auto Save & Report updated." -ForegroundColor Cyan
             }
