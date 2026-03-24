@@ -14,6 +14,10 @@ A lightweight PowerShell-based utility to monitor user activity and log work ses
 - `StartWorkTracker.bat`: A simple launcher to start the tracker in the background.
 - `WorkTimeTracker.Tests.ps1`: Pester unit tests for core utility functions.
 
+## ⚙️ Requirements
+- **PowerShell 5.1 or later**: The script uses features introduced in PowerShell 5.1.
+- **Windows OS**: Uses Win32 APIs (`user32.dll`) for idle time detection.
+
 ## 🛠 Usage
 
 ### Standard Run
