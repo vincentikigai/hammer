@@ -2,6 +2,26 @@
 #  Internet / VPN Monitor — PowerShell 5.1 Compatible
 #  Sends Windows 11 toast notification when internet drops
 # ============================================================
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# Programmatic Emoji "Lights" (prevents mojibake in script file)
+$L_GREEN  = [char]::ConvertFromUtf32(0x1F7E2) # 🟢
+$L_YELLOW = [char]::ConvertFromUtf32(0x1F7E1) # 🟡
+$L_RED    = [char]::ConvertFromUtf32(0x1F534) # 🔴
+
+# ── SINGLE INSTANCE CHECK ─────────────────────────────────────
+$mutexName  = "Global\InternetMonitor_SingleInstance_Vincent"
+$createdNew = $false
+$mutex      = New-Object System.Threading.Mutex($false, $mutexName, [ref]$createdNew)
+
+if (-not $createdNew) {
+    Write-Host "  >> ERROR: Another instance of Internet Monitor is already running." -ForegroundColor Red
+    Write-Host "  >> Please close the existing instance before starting a new one."
+    exit
+}
+# ─────────────────────────────────────────────────────────────
 
 # ── CONFIG ───────────────────────────────────────────────────
 $GLOBAL_TARGET  = "google.com" # Primary/Global target
@@ -76,6 +96,7 @@ function Send-Toast {
 
     if ($UseBurntToast) {
         try {
+            # Use specific emoji in BurntToast text if needed, but Title already has it
             New-BurntToastNotification -Text $Title, $Message
             return
         } catch {
@@ -148,58 +169,67 @@ Write-Host "  Threshold     : $FAIL_THRESHOLD failures"
 Write-Host "============================================"
 Write-Host ""
 Write-Host ">> Sending TEST notification now..."
-Notify -Title "Internet Monitor Started" -Message "Monitoring connectivity. Global: $GLOBAL_TARGET | Local: $LOCAL_TARGET" -Type "Info"
+Notify -Title "$L_GREEN Internet Monitor Started" -Message "Monitoring connectivity. Global: $GLOBAL_TARGET | Local: $LOCAL_TARGET" -Type "Info"
 Write-Host ">> If you saw a notification, everything is working!"
 Write-Host ""
 
 # ── Main loop ────────────────────────────────────────────────
 $currentState = "Connected" # Connected, GlobalDown, InternetDown
 
-while ($true) {
+try {
+    while ($true) {
 
-    $pingGlobal = Test-Connection -ComputerName $GLOBAL_TARGET -Count 1 -Quiet -ErrorAction SilentlyContinue
-    $pingLocal  = $false
-    
-    if (-not $pingGlobal) {
-        $pingLocal = Test-Connection -ComputerName $LOCAL_TARGET -Count 1 -Quiet -ErrorAction SilentlyContinue
-    }
-    
-    $ts    = Get-Date -Format "HH:mm:ss"
-    $state = "Connected"
-    $color = "Green"
-    
-    if (-not $pingGlobal) {
-        if ($pingLocal) {
-            $state = "GlobalDown"
-            $color = "Yellow"
-        } else {
-            $state = "InternetDown"
-            $color = "Red"
-        }
-    }
-
-    if ($state -eq "Connected") {
-        $failCount = 0
-        if ($currentState -ne "Connected") {
-            Write-Host "[$ts] Connection Restored" -ForegroundColor Green
-            Notify -Title "Internet Restored" -Message "Connection to $GLOBAL_TARGET is back online." -Type "Info"
-            $currentState = "Connected"
-        } else {
-            Write-Host "[$ts] Connected (Primary: $GLOBAL_TARGET)" -ForegroundColor Green
-        }
-    } else {
-        $failCount++
-        Write-Host "[$ts] State: $state | Failures: $failCount/$FAIL_THRESHOLD" -ForegroundColor $color
+        $pingGlobal = Test-Connection -ComputerName $GLOBAL_TARGET -Count 1 -Quiet -ErrorAction SilentlyContinue
+        $pingLocal  = $false
         
-        if ($failCount -ge $FAIL_THRESHOLD -and $currentState -ne $state) {
-            if ($state -eq "GlobalDown") {
-                Notify -Title "Global Internet Not Reachable" -Message "Google is down, but Baidu is reachable. Possible VPN issue." -Type "Warning"
-            } else {
-                Notify -Title "Internet Interrupted" -Message "Both Google and Baidu are unreachable. Internet may be down." -Type "Error"
-            }
-            $currentState = $state
+        if (-not $pingGlobal) {
+            $pingLocal = Test-Connection -ComputerName $LOCAL_TARGET -Count 1 -Quiet -ErrorAction SilentlyContinue
         }
-    }
+        
+        $ts    = Get-Date -Format "HH:mm:ss"
+        $state = "Connected"
+        $color = "Green"
+        
+        if (-not $pingGlobal) {
+            if ($pingLocal) {
+                $state = "GlobalDown"
+                $color = "Yellow"
+            } else {
+                $state = "InternetDown"
+                $color = "Red"
+            }
+        }
 
-    Start-Sleep -Seconds $INTERVAL
+        if ($state -eq "Connected") {
+            $failCount = 0
+            if ($currentState -ne "Connected") {
+                Write-Host "[$ts] $L_GREEN Connection Restored" -ForegroundColor Green
+                Notify -Title "$L_GREEN Internet Restored" -Message "Connection to $GLOBAL_TARGET is back online." -Type "Info"
+                $currentState = "Connected"
+            } else {
+                Write-Host "[$ts] $L_GREEN Connected (Primary: $GLOBAL_TARGET)" -ForegroundColor Green
+            }
+        } else {
+            $failCount++
+            $emoji = if ($state -eq "GlobalDown") { $L_YELLOW } else { $L_RED }
+            Write-Host "[$ts] $emoji State: $state | Failures: $failCount/$FAIL_THRESHOLD" -ForegroundColor $color
+            
+            if ($failCount -ge $FAIL_THRESHOLD -and $currentState -ne $state) {
+                if ($state -eq "GlobalDown") {
+                    Notify -Title "$L_YELLOW Global Internet Not Reachable" -Message "Google is down, but Baidu is reachable. Possible VPN issue." -Type "Warning"
+                } else {
+                    Notify -Title "$L_RED Internet Interrupted" -Message "Both Google and Baidu are unreachable. Internet may be down." -Type "Error"
+                }
+                $currentState = $state
+            }
+        }
+
+        Start-Sleep -Seconds $INTERVAL
+    }
+} finally {
+    if ($mutex) {
+        # Release if we own it (though exit usually clears it)
+        try { $mutex.ReleaseMutex() } catch {}
+        $mutex.Dispose()
+    }
 }
