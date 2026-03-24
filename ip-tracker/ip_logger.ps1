@@ -5,8 +5,7 @@ param(
 Write-Host "Script started" -ForegroundColor Green
 
 $interval = 10
-$docsPath = [Environment]::GetFolderPath('MyDocuments')
-$monitorPath = Join-Path $docsPath "monitor"
+$monitorPath = Join-Path $HOME "NetworkMonitor"
 if (-not (Test-Path $monitorPath)) {
     New-Item -ItemType Directory -Path $monitorPath -Force | Out-Null
 }

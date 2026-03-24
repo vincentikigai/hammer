@@ -39,7 +39,7 @@ A PowerShell-based utility to monitor and log your external IP address and DNS s
 ## Log File Details
 
 The script logs all data to a CSV file located at:
-`Documents\monitor\ip_log.csv`
+`~\NetworkMonitor\ip_log.csv`
 
 ### CSV Header Explanation
 
