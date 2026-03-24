@@ -112,13 +112,42 @@ try {
 function Generate-DailyReport {
     param($date, $sessions)
     if (-not $sessions) { return 0 }
-    $durations = @($sessions | ForEach-Object { $_.duration })
+    
+    # Sort sessions by start time just in case
+    $sortedSessions = $sessions | Sort-Object { $_.start }
+    
+    $durations = @($sortedSessions | ForEach-Object { $_.duration })
     $totalSeconds = ($durations | Measure-Object -Sum).Sum
-    $sessionCount = $sessions.Count
+    $sessionCount = $sortedSessions.Count
+    
     $report = "Work Time Report - $date`nTotal: $(Format-Duration $totalSeconds)`nSessions: $sessionCount`n"
-    foreach ($session in $sessions) {
-        $report += "`n$($session.start) - $($session.end) | $($session.durationHms)"
+    
+    for ($i = 0; $i -lt $sortedSessions.Count; $i++) {
+        $current = $sortedSessions[$i]
+        $report += "`n$($current.start) - $($current.end) | $($current.durationHms)"
+        
+        # Calculate Break
+        if ($i -lt ($sortedSessions.Count - 1)) {
+            $next = $sortedSessions[$i + 1]
+            try {
+                # Force string type and trim
+                $eStr = [string]($current.end).Trim()
+                $sStr = [string]($next.start).Trim()
+                
+                # Use a more flexible parse or explicit if possible
+                $eTime = [DateTime]$eStr
+                $sTime = [DateTime]$sStr
+                
+                $gap = ($sTime - $eTime).TotalSeconds
+                if ($gap -gt 0) {
+                    $report += "`n   --- Break: $(Format-Duration $gap) ---"
+                }
+            } catch {
+                # Silently skip if parse fails
+            }
+        }
     }
+    
     $reportFile = "$DataFolder\report_$($date -replace '/','-').txt"
     $report | Set-Content $reportFile
     return $totalSeconds
@@ -147,8 +176,15 @@ function Stop-TrackerGracefully {
             Write-Host "`n[SIG] Final session saved." -ForegroundColor Yellow
         }
     }
-    $data.activeSession = $null
+    $data.activeSession = $null # Clear heartbeat for clean exit
     Save-Data $data
+    
+    # Final report update
+    $today = (Get-Date).ToString('yyyy-MM-dd')
+    if ($data.dailyStats[$today].sessions.Count -gt 0) {
+        Generate-DailyReport $today $data.dailyStats[$today].sessions | Out-Null
+    }
+    
     Write-Host "[SIG] Tracker stopped." -ForegroundColor Red
 }
 
