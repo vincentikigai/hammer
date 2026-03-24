@@ -5,14 +5,16 @@ A lightweight PowerShell-based utility to monitor user activity and log work ses
 ## 🚀 Features
 - **Automatic Activity Detection**: Tracks work sessions based on system input (mouse/keyboard).
 - **Session Logging**: Detailed logs of session start, end, and duration stored in JSON.
-- **Reporting**: Automatically generates daily summaries of work hours.
+- **CSV Export**: Automatically exports a flat `work_sessions.csv` file for easy analysis in Excel or Google Sheets.
+- **Reporting**: Automatically generates daily summaries of work hours in text format.
 - **Background Execution**: Can be run silently via the provided batch script.
 - **Testable**: Supports a dedicated test mode and Pester unit tests.
 
 ## 📂 Project Structure
-- `WorkTimeTracker.ps1`: The main tracking engine (refactored for robustness and testability).
-- `StartWorkTracker.bat`: A simple launcher to start the tracker in the background.
-- `WorkTimeTracker.Tests.ps1`: Pester unit tests for core utility functions.
+- `work_time_tracker.ps1`: The main tracking engine (refactored for robustness and testability).
+- `start_work_tracker.bat`: A simple launcher to start the tracker in the background.
+- `work_time_tracker.Tests.ps1`: Pester unit tests for core utility functions.
+- `work_sessions.csv`: (Generated) Flat file ready for spreadsheet analysis.
 
 ## ⚙️ Requirements
 - **PowerShell 5.1 or later**: The script uses features introduced in PowerShell 5.1.

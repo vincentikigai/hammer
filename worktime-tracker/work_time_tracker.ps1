@@ -76,8 +76,15 @@ function Load-Data {
 # Save data
 function Save-Data {
     param($data)
-    # ConvertTo-Json in PS produces pretty-printed JSON by default (indented)
+    # 1. Save JSON (Indented by default in PS)
     $data | ConvertTo-Json -Depth 10 | Set-Content $logFile
+    
+    # 2. Save CSV (Export the flat sessions list)
+    if ($data.sessions -and $data.sessions.Count -gt 0) {
+        $csvFile = Join-Path $DataFolder "work_sessions.csv"
+        # Convert Hashtables back to PSCustomObject for correct CSV export
+        $data.sessions | ForEach-Object { [PSCustomObject]$_ } | Export-Csv -Path $csvFile -NoTypeInformation -Encoding UTF8
+    }
 }
 
 # Win32 API for Idle Time
