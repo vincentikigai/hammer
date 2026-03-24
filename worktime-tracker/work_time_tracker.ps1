@@ -262,6 +262,32 @@ function Start-Tracker {
                 Write-Host "[$($now.ToString('HH:mm:ss'))] Session Start" -ForegroundColor Green
             }
             
+            # --- Midnight Split Check ---
+            if ($isWorking -and $sessionStart.Date -ne $now.Date) {
+                # Finalize old part
+                $oldDate = $sessionStart.ToString('yyyy-MM-dd')
+                $sessionEnd = $sessionStart.Date.AddDays(1).AddSeconds(-1)
+                $duration = ($sessionEnd - $sessionStart).TotalSeconds
+                
+                $session = [Ordered]@{
+                    date     = $oldDate
+                    start    = $sessionStart.ToString('HH:mm:ss')
+                    end      = "23:59:59"
+                    duration = [int]$duration
+                    durationHms = Format-Duration $duration
+                }
+                
+                # Save old part
+                if (-not $data.dailyStats.ContainsKey($oldDate)) { $data.dailyStats[$oldDate] = [Ordered]@{ sessions = @(); totalSeconds = 0; totalHms = "00:00:00" } }
+                $data.dailyStats[$oldDate].sessions += $session
+                $data.sessions += $session
+                
+                # Start new part
+                $sessionStart = $now.Date # 00:00:00 today
+                Write-Host "[$($now.ToString('HH:mm:ss'))] Midnight Split - New day session started." -ForegroundColor Magenta
+                Save-Data $data
+            }
+            
             # Heartbeat Save (every 30 seconds)
             if ($now.Second % 30 -eq 0) {
                 $duration = ($now - $sessionStart).TotalSeconds
