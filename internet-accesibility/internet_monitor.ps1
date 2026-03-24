@@ -4,7 +4,8 @@
 # ============================================================
 
 # ── CONFIG ───────────────────────────────────────────────────
-$TARGET         = "1.1.1.1"   # Cloudflare DNS
+$GLOBAL_TARGET  = "google.com" # Primary/Global target
+$LOCAL_TARGET   = "baidu.com"  # Fallback/Local target
 $INTERVAL       = 10           # seconds between checks
 $FAIL_THRESHOLD = 2            # consecutive failures before alerting
 # ─────────────────────────────────────────────────────────────
@@ -44,17 +45,18 @@ $notifiedDown = $false
 function Send-BalloonTip {
     param(
         [string]$Title,
-        [string]$Message
+        [string]$Message,
+        [string]$Type = "Warning" # Info, Warning, Error
     )
 
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
     $balloon                 = New-Object System.Windows.Forms.NotifyIcon
-    $balloon.Icon            = [System.Drawing.SystemIcons]::Warning
+    $balloon.Icon            = if ($Type -eq "Error") { [System.Drawing.SystemIcons]::Error } elseif ($Type -eq "Warning") { [System.Drawing.SystemIcons]::Warning } else { [System.Drawing.SystemIcons]::Information }
     $balloon.BalloonTipTitle = $Title
     $balloon.BalloonTipText  = $Message
-    $balloon.BalloonTipIcon  = [System.Windows.Forms.ToolTipIcon]::Warning
+    $balloon.BalloonTipIcon  = [System.Windows.Forms.ToolTipIcon]::$Type
     $balloon.Visible         = $true
     $balloon.ShowBalloonTip(8000)
 
@@ -68,7 +70,8 @@ function Send-BalloonTip {
 function Send-Toast {
     param(
         [string]$Title,
-        [string]$Message
+        [string]$Message,
+        [string]$Type = "Warning"
     )
 
     if ($UseBurntToast) {
@@ -100,18 +103,24 @@ function Send-Toast {
     $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
     $xml.LoadXml($template)
     $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
+    
+    # Optional: could add sound/color customizations here via XML
     [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Internet Monitor").Show($toast)
 }
 
 function Notify {
-    param([string]$Title, [string]$Message)
+    param(
+        [string]$Title, 
+        [string]$Message, 
+        [string]$Type = "Warning"
+    )
 
     Write-Host "  >> Sending notification: $Title"
 
     # Try toast, fallback to balloon
     $toastSent = $false
     try {
-        Send-Toast -Title $Title -Message $Message
+        Send-Toast -Title $Title -Message $Message -Type $Type
         $toastSent = $true
         Write-Host "  >> Toast sent OK"
     } catch {
@@ -120,7 +129,7 @@ function Notify {
 
     if (-not $toastSent) {
         try {
-            Send-BalloonTip -Title $Title -Message $Message
+            Send-BalloonTip -Title $Title -Message $Message -Type $Type
             Write-Host "  >> Balloon tip sent OK"
         } catch {
             Write-Host "  >> Balloon tip also failed: $($_.Exception.Message)"
@@ -132,39 +141,63 @@ function Notify {
 Write-Host ""
 Write-Host "============================================"
 Write-Host "  Internet Monitor (PowerShell 5.1)"
-Write-Host "  Target   : $TARGET"
-Write-Host "  Interval : ${INTERVAL}s"
-Write-Host "  Threshold: $FAIL_THRESHOLD failures"
+Write-Host "  Global Target : $GLOBAL_TARGET"
+Write-Host "  Local Target  : $LOCAL_TARGET"
+Write-Host "  Interval      : ${INTERVAL}s"
+Write-Host "  Threshold     : $FAIL_THRESHOLD failures"
 Write-Host "============================================"
 Write-Host ""
 Write-Host ">> Sending TEST notification now..."
-Notify -Title "Internet Monitor Started" -Message "Monitoring $TARGET every ${INTERVAL}s. You will be alerted if connection drops."
+Notify -Title "Internet Monitor Started" -Message "Monitoring connectivity. Global: $GLOBAL_TARGET | Local: $LOCAL_TARGET" -Type "Info"
 Write-Host ">> If you saw a notification, everything is working!"
 Write-Host ""
 
 # ── Main loop ────────────────────────────────────────────────
+$currentState = "Connected" # Connected, GlobalDown, InternetDown
+
 while ($true) {
 
-    $ping = Test-Connection -ComputerName $TARGET -Count 1 -Quiet -ErrorAction SilentlyContinue
-    $ts   = Get-Date -Format "HH:mm:ss"
-
-    Write-Host "[$ts] Ping result: $ping  | failCount: $failCount | notifiedDown: $notifiedDown"
-
-    if ($ping) {
-        $failCount = 0
-
-        if ($notifiedDown) {
-            Notify -Title "Internet Restored" -Message "Connection to $TARGET is back online."
-            $notifiedDown = $false
+    $pingGlobal = Test-Connection -ComputerName $GLOBAL_TARGET -Count 1 -Quiet -ErrorAction SilentlyContinue
+    $pingLocal  = $false
+    
+    if (-not $pingGlobal) {
+        $pingLocal = Test-Connection -ComputerName $LOCAL_TARGET -Count 1 -Quiet -ErrorAction SilentlyContinue
+    }
+    
+    $ts    = Get-Date -Format "HH:mm:ss"
+    $state = "Connected"
+    $color = "Green"
+    
+    if (-not $pingGlobal) {
+        if ($pingLocal) {
+            $state = "GlobalDown"
+            $color = "Yellow"
+        } else {
+            $state = "InternetDown"
+            $color = "Red"
         }
+    }
 
+    if ($state -eq "Connected") {
+        $failCount = 0
+        if ($currentState -ne "Connected") {
+            Write-Host "[$ts] Connection Restored" -ForegroundColor Green
+            Notify -Title "Internet Restored" -Message "Connection to $GLOBAL_TARGET is back online." -Type "Info"
+            $currentState = "Connected"
+        } else {
+            Write-Host "[$ts] Connected (Primary: $GLOBAL_TARGET)" -ForegroundColor Green
+        }
     } else {
         $failCount++
-        Write-Host "  >> FAIL #$failCount detected"
-
-        if ($failCount -ge $FAIL_THRESHOLD -and -not $notifiedDown) {
-            Notify -Title "Internet Disconnected" -Message "No response from $TARGET after $failCount attempts. VPN may be down."
-            $notifiedDown = $true
+        Write-Host "[$ts] State: $state | Failures: $failCount/$FAIL_THRESHOLD" -ForegroundColor $color
+        
+        if ($failCount -ge $FAIL_THRESHOLD -and $currentState -ne $state) {
+            if ($state -eq "GlobalDown") {
+                Notify -Title "Global Internet Not Reachable" -Message "Google is down, but Baidu is reachable. Possible VPN issue." -Type "Warning"
+            } else {
+                Notify -Title "Internet Interrupted" -Message "Both Google and Baidu are unreachable. Internet may be down." -Type "Error"
+            }
+            $currentState = $state
         }
     }
 
