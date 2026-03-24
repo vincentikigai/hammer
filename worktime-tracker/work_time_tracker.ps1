@@ -1,21 +1,49 @@
-# 工作时间统计程序 - 完全后台运行
-# 保存为: WorkTimeTracker.ps1
+# Work Time Tracker - Enhanced Version (Supports Test Mode)
+# Save as: WorkTimeTracker.ps1
 
-# 配置
-$dataFolder = "$env:USERPROFILE\WorkTimeData"
-$logFile = "$dataFolder\work_log.json"
-$inactivityThreshold = 180 # 3分钟无活动则结束会话（秒）
+param(
+    [string]$DataFolder = "$env:USERPROFILE\WorkTimeData",
+    [int]$InactivityThreshold = 180,
+    [int]$ReportIntervalMinutes = 60,
+    [switch]$TestMode
+)
 
-# 创建数据文件夹
-if (-not (Test-Path $dataFolder)) {
-    New-Item -ItemType Directory -Path $dataFolder | Out-Null
+if ($TestMode) {
+    $DataFolder = "$env:USERPROFILE\WorkTimeDataTest"
+    $InactivityThreshold = 5
+    $ReportIntervalMinutes = 1
+    Write-Host ">>> Test Mode Enabled - Threshold: $InactivityThreshold s | Interval: $ReportIntervalMinutes min <<<" -ForegroundColor White -BackgroundColor DarkMagenta
 }
 
-# 加载或初始化数据
+$logFile = "$DataFolder\work_log.json"
+
+if (-not (Test-Path $DataFolder)) {
+    New-Item -ItemType Directory -Path $DataFolder | Out-Null
+}
+
+function ConvertTo-Hashtable {
+    param($InputObject)
+    if ($InputObject -is [System.Management.Automation.PSCustomObject]) {
+        $hash = @{}
+        foreach ($property in $InputObject.PSObject.Properties) {
+            $hash[$property.Name] = ConvertTo-Hashtable $property.Value
+        }
+        return $hash
+    } elseif ($InputObject -is [System.Collections.IEnumerable] -and $InputObject -isnot [string]) {
+        $result = @()
+        foreach ($item in $InputObject) {
+            $result += ConvertTo-Hashtable $item
+        }
+        return ,$result
+    } else {
+        return $InputObject
+    }
+}
+
 function Load-Data {
     if (Test-Path $logFile) {
-        $data = Get-Content $logFile -Raw | ConvertFrom-Json
-        return $data
+        $raw = Get-Content $logFile -Raw | ConvertFrom-Json
+        return ConvertTo-Hashtable $raw
     } else {
         return @{
             sessions = @()
@@ -24,23 +52,21 @@ function Load-Data {
     }
 }
 
-# 保存数据
 function Save-Data {
     param($data)
     $data | ConvertTo-Json -Depth 10 | Set-Content $logFile
 }
 
-# 获取最后输入时间
-Add-Type @'
+$typeDefinition = @'
 using System;
 using System.Runtime.InteropServices;
 
 public class IdleTime {
     [DllImport("user32.dll")]
-    static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+    public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
 
     [StructLayout(LayoutKind.Sequential)]
-    struct LASTINPUTINFO {
+    public struct LASTINPUTINFO {
         public uint cbSize;
         public uint dwTime;
     }
@@ -54,126 +80,110 @@ public class IdleTime {
 }
 '@
 
-# 格式化时间
+try {
+    Add-Type -TypeDefinition $typeDefinition -ErrorAction SilentlyContinue
+} catch {}
+
 function Format-Duration {
     param($seconds)
-    $hours = [Math]::Floor($seconds / 3600)
-    $minutes = [Math]::Floor(($seconds % 3600) / 60)
-    $secs = $seconds % 60
-    return "{0:D2}:{1:D2}:{2:D2}" -f $hours, $minutes, $secs
+    $totalSeconds = [int]$seconds
+    $hours = [Math]::Floor($totalSeconds / 3600)
+    $minutes = [Math]::Floor(($totalSeconds % 3600) / 60)
+    $secs = $totalSeconds % 60
+    return "{0:D2}:{1:D2}:{2:D2}" -f [int]$hours, [int]$minutes, [int]$secs
 }
 
-# 生成日报
 function Generate-DailyReport {
     param($date, $sessions)
-    
-    $totalSeconds = ($sessions | Measure-Object -Property duration -Sum).Sum
+    if (-not $sessions) { return 0 }
+    $durations = @($sessions | ForEach-Object { $_.duration })
+    $totalSeconds = ($durations | Measure-Object -Sum).Sum
     $sessionCount = $sessions.Count
-    
-    $report = @"
-=================================
-工作时间日报 - $date
-=================================
-总工作时长: $(Format-Duration $totalSeconds)
-工作会话数: $sessionCount
-
-会话明细:
-"@
-    
+    $report = "Work Time Report - $date`nTotal: $(Format-Duration $totalSeconds)`nSessions: $sessionCount`n"
     foreach ($session in $sessions) {
         $report += "`n$($session.start) - $($session.end) | $(Format-Duration $session.duration)"
     }
-    
-    $reportFile = "$dataFolder\报告_$($date -replace '/','-').txt"
+    $reportFile = "$DataFolder\report_$($date -replace '/','-').txt"
     $report | Set-Content $reportFile
-    
     return $totalSeconds
 }
 
-# 主循环
-Write-Host "工作时间统计程序已启动（后台运行）" -ForegroundColor Green
-Write-Host "数据保存位置: $dataFolder" -ForegroundColor Yellow
-Write-Host "按 Ctrl+C 停止程序" -ForegroundColor Cyan
-
-$data = Load-Data
-$isWorking = $false
-$sessionStart = $null
-$lastSaveTime = Get-Date
-
-while ($true) {
-    $idleSeconds = [IdleTime]::GetIdleTime()
-    $now = Get-Date
-    $today = $now.ToString('yyyy-MM-dd')
+function Start-Tracker {
+    Write-Host "Work Time Tracker Started..." -ForegroundColor Green
+    Write-Host "Data Path: $DataFolder" -ForegroundColor Yellow
+    Write-Host "Press Ctrl+C to stop" -ForegroundColor Cyan
     
-    # 检查是否新的一天
-    if ($data.dailyStats.ContainsKey($today) -eq $false) {
-        $data.dailyStats[$today] = @{
-            sessions = @()
-            totalSeconds = 0
+    $data = Load-Data
+    $isWorking = $false
+    $sessionStart = $null
+    $lastSaveTime = Get-Date
+
+    while ($true) {
+        $idleSeconds = [IdleTime]::GetIdleTime()
+        $now = Get-Date
+        $today = $now.ToString('yyyy-MM-dd')
+        
+        if ($null -eq $data.dailyStats) { $data.dailyStats = @{} }
+        if (-not $data.dailyStats.ContainsKey($today)) {
+            $data.dailyStats[$today] = @{ sessions = @(); totalSeconds = 0 }
         }
-    }
-    
-    # 判断工作状态
-    if ($idleSeconds -lt $inactivityThreshold) {
-        # 用户活跃
-        if (-not $isWorking) {
-            # 开始新会话
-            $isWorking = $true
-            $sessionStart = $now
-            Write-Host "[$($now.ToString('HH:mm:ss'))] 开始工作会话" -ForegroundColor Green
-        }
-    } else {
-        # 用户不活跃
-        if ($isWorking) {
-            # 结束会话
-            $isWorking = $false
-            $sessionEnd = $now.AddSeconds(-$inactivityThreshold)
-            $duration = ($sessionEnd - $sessionStart).TotalSeconds
-            
-            if ($duration -gt 60) { # 至少工作1分钟才记录
-                $session = @{
-                    start = $sessionStart.ToString('HH:mm:ss')
-                    end = $sessionEnd.ToString('HH:mm:ss')
-                    duration = [int]$duration
-                }
-                
-                $data.dailyStats[$today].sessions += $session
-                $data.sessions += @{
-                    date = $today
-                    start = $sessionStart.ToString('yyyy-MM-dd HH:mm:ss')
-                    end = $sessionEnd.ToString('yyyy-MM-dd HH:mm:ss')
-                    duration = [int]$duration
-                }
-                
-                Write-Host "[$($now.ToString('HH:mm:ss'))] 会话结束 - 时长: $(Format-Duration $duration)" -ForegroundColor Yellow
-                
-                # 保存数据
-                Save-Data $data
+        
+        if ($idleSeconds -lt $InactivityThreshold) {
+            if (-not $isWorking) {
+                $isWorking = $true
+                $sessionStart = $now
+                Write-Host "[$($now.ToString('HH:mm:ss'))] Session Start" -ForegroundColor Green
             }
-            
-            $sessionStart = $null
+        } else {
+            if ($isWorking) {
+                $isWorking = $false
+                $sessionEnd = $now.AddSeconds(-$InactivityThreshold)
+                $duration = ($sessionEnd - $sessionStart).TotalSeconds
+                if ($duration -gt 1) { 
+                    $session = @{
+                        start = $sessionStart.ToString('HH:mm:ss')
+                        end = $sessionEnd.ToString('HH:mm:ss')
+                        duration = [int]$duration
+                    }
+                    $data.dailyStats[$today].sessions += $session
+                    if ($null -eq $data.sessions) { $data.sessions = @() }
+                    $data.sessions += @{
+                        date = $today
+                        start = $sessionStart.ToString('yyyy-MM-dd HH:mm:ss')
+                        end = $sessionEnd.ToString('yyyy-MM-dd HH:mm:ss')
+                        duration = [int]$duration
+                    }
+                    Write-Host "[$($now.ToString('HH:mm:ss'))] Session End - Duration: $(Format-Duration $duration)" -ForegroundColor Yellow
+                    Save-Data $data
+                }
+                $sessionStart = $null
+            }
         }
-    }
-    
-    # 每小时自动保存并生成报告
-    if (($now - $lastSaveTime).TotalMinutes -gt 60) {
-        if ($data.dailyStats[$today].sessions.Count -gt 0) {
-            $totalSeconds = Generate-DailyReport $today $data.dailyStats[$today].sessions
-            $data.dailyStats[$today].totalSeconds = $totalSeconds
-            Save-Data $data
-            Write-Host "[$($now.ToString('HH:mm:ss'))] 自动保存 - 今日已工作: $(Format-Duration $totalSeconds)" -ForegroundColor Cyan
+        
+        if (($now - $lastSaveTime).TotalMinutes -gt $ReportIntervalMinutes) {
+            if ($data.dailyStats[$today].sessions.Count -gt 0) {
+                $totalSeconds = Generate-DailyReport $today $data.dailyStats[$today].sessions
+                $data.dailyStats[$today].totalSeconds = $totalSeconds
+                Save-Data $data
+                Write-Host "[$($now.ToString('HH:mm:ss'))] Auto Save - Today Total: $(Format-Duration $totalSeconds)" -ForegroundColor Cyan
+            }
+            $lastSaveTime = $now
         }
-        $lastSaveTime = $now
-    }
-    
-    # 显示实时状态（每分钟）
-    if ($now.Second -eq 0) {
-        if ($isWorking) {
-            $currentDuration = ($now - $sessionStart).TotalSeconds
-            $todayTotal = $data.dailyStats[$today].totalSeconds + $currentDuration
-            Write-Host "[$($now.ToString('HH:mm:ss'))] 工作中 - 本次: $(Format-Duration $currentDuration) | 今日: $(Format-Duration $todayTotal)" -ForegroundColor Green
+        
+        $displayInterval = if ($TestMode) { 10 } else { 60 }
+        if ($now.Second % $displayInterval -eq 0) {
+            if ($isWorking) {
+                $currentDuration = ($now - $sessionStart).TotalSeconds
+                $todayTotal = $data.dailyStats[$today].totalSeconds + $currentDuration
+                Write-Host "[$($now.ToString('HH:mm:ss'))] Working - Current: $(Format-Duration $currentDuration) | Today: $(Format-Duration $todayTotal)" -ForegroundColor Green
+            } elseif ($TestMode) {
+                Write-Host "[$($now.ToString('HH:mm:ss'))] Idle: $idleSeconds s" -ForegroundColor Gray
+            }
         }
+        Start-Sleep -Seconds 1
     }
-    
-    Start-Sleep -Seconds 1
+}
+
+if ($MyInvocation.InvocationName -ne '.') {
+    Start-Tracker
 }
