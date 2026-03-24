@@ -1,56 +1,43 @@
-# Worktime Tracker
+# 🕒 Worktime Tracker
 
-A lightweight PowerShell-based utility to monitor user activity and log work sessions.
+A robust, lightweight PowerShell utility to automatically monitor user activity and log work sessions with zero manual effort.
 
-## 🚀 Features
-- **Automatic Activity Detection**: Tracks work sessions based on system input (mouse/keyboard).
-- **Session Logging**: Detailed logs of session start, end, and duration stored in JSON.
-- **CSV Export**: Automatically exports a flat `work_sessions.csv` file for easy analysis in Excel or Google Sheets.
-- **Markdown Reporting**: Generates beautiful daily summaries in Markdown (`.md`) with tables and break tracking.
-- **Background Execution**: Can be run silently via the provided batch script.
-- **Testable**: Supports a dedicated test mode and Pester unit tests.
+## 🚀 Key Features
+- **Smart Activity Detection**: Automatically tracks sessions based on mouse and keyboard input.
+- **Dual Logging**: Maintains a structured **JSON** log for internal logic and a flat **CSV** export for Excel/Spreadsheet analysis.
+- **Markdown Reports**: Generates professional daily summaries (`.md`) with session tables and break tracking.
+- **Safety & Persistence**: 30-second heartbeats and auto-recovery ensure data isn't lost during power outages.
+- **Midnight Splitting**: Automatically splits sessions at 12:00 AM for 100% accurate daily totals.
+- **Background Mode**: Run silently in the tray/background via the included `.bat` launcher.
 
 ## 📂 Project Structure
-- `work_time_tracker.ps1`: The main tracking engine (refactored for robustness and testability).
-- `start_work_tracker.bat`: A simple launcher to start the tracker in the background.
-- `work_time_tracker.Tests.ps1`: Pester unit tests for core utility functions.
-- `work_sessions.csv`: (Generated) Flat file ready for spreadsheet analysis.
+- `work_time_tracker.ps1`: The core tracking engine.
+- `start_work_tracker.bat`: Launcher for background execution.
+- `work_time_tracker.Tests.ps1`: Pester unit tests for core logic.
+- `BACKLOG.md`: Future roadmap and pending features.
 
 ## ⚙️ Requirements
-- **PowerShell 5.1 or later**: The script uses features introduced in PowerShell 5.1.
-- **Windows OS**: Uses Win32 APIs (`user32.dll`) for idle time detection.
+- **Windows OS** (uses `user32.dll` for idle detection).
+- **PowerShell 5.1 or later**.
 
-## 🛠 Usage
+## 🛠 Quick Start
+1.  **Run**: Double-click `start_work_tracker.bat` or run `.\work_time_tracker.ps1` in PowerShell.
+2.  **View**: Check your results in `$env:USERPROFILE\WorkTimeData`.
+3.  **Test**: Run `.\work_time_tracker.ps1 -TestMode` for a 5-second threshold test.
 
-### Standard Run
-To start tracking work time normally:
-1. Run `StartWorkTracker.bat` or run directly in PowerShell:
-   ```powershell
-   .\WorkTimeTracker.ps1
-   ```
-2. Logs and reports are saved to `$env:USERPROFILE\WorkTimeData`.
-
-### Test Mode
-To verify the tracker logic without affecting your real data, use the `-TestMode` flag:
-```powershell
-.\WorkTimeTracker.ps1 -TestMode
-```
-- Inactivity threshold is reduced to 5 seconds.
-- Reports are generated every 1 minute.
-- Data is saved to `$env:USERPROFILE\WorkTimeDataTest`.
-
-## ⚙️ Configuration (Parameters)
-The script supports several optional parameters:
-- `-DataFolder <string>`: Custom directory for logs and reports.
-- `-InactivityThreshold <int>`: Delay in seconds before a session is considered ended (default: 180).
-- `-ReportIntervalMinutes <int>`: Frequency of automatic report updates (default: 60).
+## ⚙️ Configuration (Optional)
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
+| `-DataFolder` | Directory for logs and reports | `~\WorkTimeData` |
+| `-InactivityThreshold` | Idle seconds before session ends | `180` |
+| `-ReportIntervalMinutes`| How often to update the MD report | `60` |
 
 ## 🧪 Testing
-To run the automated unit tests (requires [Pester](https://pester.dev/)):
+Requires [Pester](https://pester.dev/):
 ```powershell
-Invoke-Pester -Path .\WorkTimeTracker.Tests.ps1
+Invoke-Pester -Path .\work_time_tracker.Tests.ps1
 ```
 
 ## 📝 Troubleshooting
-- **Execution Policy**: If the script is blocked, run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
-- **JSON Format**: If the log file becomes corrupted, delete `work_log.json` and it will be re-initialized.
+- **Execution Policy**: If blocked, run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+- **Manual Reset**: Delete `work_log.json` and `work_sessions.csv` to start with a fresh history.
