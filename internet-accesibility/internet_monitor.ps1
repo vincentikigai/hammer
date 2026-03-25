@@ -12,7 +12,7 @@ $L_YELLOW = [char]::ConvertFromUtf32(0x1F7E1) # 🟡
 $L_RED    = [char]::ConvertFromUtf32(0x1F534) # 🔴
 
 # ── SINGLE INSTANCE CHECK ─────────────────────────────────────
-$mutexName  = "Global\InternetMonitor_SingleInstance_Vincent"
+$mutexName  = "Global\InternetMonitor_SingleInstance_$($env:USERNAME)"
 $createdNew = $false
 $mutex      = New-Object System.Threading.Mutex($false, $mutexName, [ref]$createdNew)
 
