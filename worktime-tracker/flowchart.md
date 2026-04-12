@@ -34,8 +34,11 @@ flowchart TD
         Q --> F
     end
 
-    Loop -->|"Termination (Ctrl+C)"| R["Trap Block:<br/>Save current session<br/>Clear activeSession<br/>Update final report"]
-    R --> S["Script End"]
+    Loop -->|"Termination (Ctrl+C)"| R
+    subgraph Termination ["Termination Path"]
+        R["Trap Block:<br/>Save current session<br/>Clear activeSession<br/>Update final report"]
+        R --> S["Script End"]
+    end
 ```
 
 ## Logic Highlights

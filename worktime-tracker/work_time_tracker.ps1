@@ -82,17 +82,52 @@ function Load-Data {
     }
 }
 
-# Save data
+# Save data (with atomic writes, backup, and validation)
 function Save-Data {
     param($data)
-    # 1. Save JSON (Indented by default in PS)
-    $data | ConvertTo-Json -Depth 10 | Set-Content $logFile
-    
-    # 2. Save CSV (Export the flat sessions list)
-    if ($data.sessions -and $data.sessions.Count -gt 0) {
-        $csvFile = Join-Path $DataFolder "work_sessions.csv"
-        # Convert Hashtables back to PSCustomObject for correct CSV export
-        $data.sessions | ForEach-Object { [PSCustomObject]$_ } | Export-Csv -Path $csvFile -NoTypeInformation -Encoding UTF8
+    try {
+        # Backup existing file before save
+        $backupFile = "$logFile.backup"
+        if (Test-Path $logFile) {
+            Copy-Item $logFile $backupFile -Force -ErrorAction SilentlyContinue
+            Write-Host "[SAVE] Backup created at: $backupFile" -ForegroundColor Gray
+        }
+        
+        # 1. Save JSON atomically using temp file
+        $tempFile = "$logFile.tmp"
+        $jsonContent = $data | ConvertTo-Json -Depth 10
+        $jsonContent | Set-Content -Path $tempFile -Encoding UTF8 -ErrorAction Stop
+        
+        # Verify temp file was created
+        if (-not (Test-Path $tempFile)) {
+            throw "Temp file not created at $tempFile"
+        }
+        
+        # Atomic replace: Move temp file to actual file
+        [System.IO.File]::Move($tempFile, $logFile, $true)
+        
+        # Verify move succeeded
+        if (-not (Test-Path $logFile)) {
+            throw "Move to final location failed - file not found at $logFile"
+        }
+        
+        Write-Host "[SAVE] JSON saved successfully (backup: $backupFile)" -ForegroundColor Cyan
+        
+        # 2. Save CSV (Export the flat sessions list)
+        if ($data.sessions -and $data.sessions.Count -gt 0) {
+            $csvFile = Join-Path $DataFolder "work_sessions.csv"
+            # Convert Hashtables back to PSCustomObject for correct CSV export
+            $data.sessions | ForEach-Object { [PSCustomObject]$_ } | Export-Csv -Path $csvFile -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+            Write-Host "[SAVE] CSV saved successfully." -ForegroundColor Cyan
+        }
+    } catch {
+        Write-Host "[ERROR] Failed to save data: $_" -ForegroundColor Red
+        # Cleanup temp file if it exists
+        if (Test-Path $tempFile) {
+            Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+            Write-Host "[CLEANUP] Temp file removed." -ForegroundColor Yellow
+        }
+        # Don't exit - allow tracker to continue, data stays in memory
     }
 }
 
@@ -234,6 +269,8 @@ function Start-Tracker {
         $data.sessions += $session
         $data.activeSession = $null
         Save-Data $data
+        # Update report after recovery
+        Generate-DailyReport $today $data.dailyStats[$today].sessions | Out-Null
         Write-Host ">>> Session recovered successfully." -ForegroundColor Green
     }
     
@@ -327,6 +364,8 @@ function Start-Tracker {
                     Write-Host "[$($now.ToString('HH:mm:ss'))] Session End - Duration: $(Format-Duration $duration)" -ForegroundColor Yellow
                     $data.activeSession = $null
                     Save-Data $data
+                    # Update report immediately after saving session
+                    Generate-DailyReport $today $data.dailyStats[$today].sessions | Out-Null
                 }
                 $sessionStart = $null
             }
