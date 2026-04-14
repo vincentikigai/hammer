@@ -22,7 +22,11 @@ if ($TestMode) {
     Write-Host ">>> Test Mode Enabled - Threshold: $InactivityThreshold s | Interval: $ReportIntervalMinutes min <<<" -ForegroundColor White -BackgroundColor DarkMagenta
 }
 
-$logFile = "$DataFolder\work_log.json"
+$LegacyLogFile = "$DataFolder\work_log.json"
+$SessionLogFile = "$DataFolder\session_log.json"
+$DailyStatsFile = "$DataFolder\daily_stats.json"
+$ActiveStateFile = "$DataFolder\active_state.json"
+$CsvFile = "$DataFolder\session_history.csv"
 
 # Create folder
 if (-not (Test-Path $DataFolder)) {
@@ -59,76 +63,94 @@ function ConvertTo-Hashtable {
     }
 }
 
-# Load or init data
-function Load-Data {
-    $defaultData = @{
-        sessions = @()
-        dailyStats = @{}
-        activeSession = $null
-    }
-    if (Test-Path $logFile) {
-        $content = Get-Content $logFile -Raw
-        if ([string]::IsNullOrWhiteSpace($content)) { return $defaultData }
-        $raw = $content | ConvertFrom-Json
-        if ($null -eq $raw) { return $defaultData }
-        $data = ConvertTo-Hashtable $raw
-        # Ensure properties exist
-        foreach ($key in $defaultData.Keys) {
-            if (-not $data.ContainsKey($key)) { $data[$key] = $defaultData[$key] }
-        }
-        return $data
-    } else {
-        return $defaultData
+function Save-JsonFile {
+    param($Path, $Data)
+    try {
+        $tempFile = "$Path.tmp"
+        $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $tempFile -Encoding UTF8 -ErrorAction Stop
+        if (Test-Path $Path) { Remove-Item $Path -Force -ErrorAction Stop }
+        Move-Item $tempFile $Path -Force -ErrorAction Stop
+    } catch {
+        Write-Host "[ERROR] Failed to save $($Path): $_" -ForegroundColor Red
+        if (Test-Path $tempFile) { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
     }
 }
 
-# Save data (with atomic writes, backup, and validation)
-function Save-Data {
-    param($data)
-    try {
-        # Backup existing file before save
-        $backupFile = "$logFile.backup"
-        if (Test-Path $logFile) {
-            Copy-Item $logFile $backupFile -Force -ErrorAction SilentlyContinue
-            Write-Host "[SAVE] Backup created at: $backupFile" -ForegroundColor Gray
-        }
-        
-        # 1. Save JSON atomically using temp file
-        $tempFile = "$logFile.tmp"
-        $jsonContent = $data | ConvertTo-Json -Depth 10
-        $jsonContent | Set-Content -Path $tempFile -Encoding UTF8 -ErrorAction Stop
-        
-        # Verify temp file was created
-        if (-not (Test-Path $tempFile)) {
-            throw "Temp file not created at $tempFile"
-        }
-        
-        # Atomic replace: Move temp file to actual file
-        [System.IO.File]::Move($tempFile, $logFile, $true)
-        
-        # Verify move succeeded
-        if (-not (Test-Path $logFile)) {
-            throw "Move to final location failed - file not found at $logFile"
-        }
-        
-        Write-Host "[SAVE] JSON saved successfully (backup: $backupFile)" -ForegroundColor Cyan
-        
-        # 2. Save CSV (Export the flat sessions list)
-        if ($data.sessions -and $data.sessions.Count -gt 0) {
-            $csvFile = Join-Path $DataFolder "work_sessions.csv"
-            # Convert Hashtables back to PSCustomObject for correct CSV export
-            $data.sessions | ForEach-Object { [PSCustomObject]$_ } | Export-Csv -Path $csvFile -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
-            Write-Host "[SAVE] CSV saved successfully." -ForegroundColor Cyan
-        }
-    } catch {
-        Write-Host "[ERROR] Failed to save data: $_" -ForegroundColor Red
-        # Cleanup temp file if it exists
-        if (Test-Path $tempFile) {
-            Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-            Write-Host "[CLEANUP] Temp file removed." -ForegroundColor Yellow
-        }
-        # Don't exit - allow tracker to continue, data stays in memory
+function Save-ActiveState {
+    param($activeSession)
+    Save-JsonFile -Path $ActiveStateFile -Data @{ activeSession = $activeSession }
+}
+
+function Save-Sessions {
+    param($sessions)
+    Save-JsonFile -Path $SessionLogFile -Data @{ sessions = $sessions }
+    if ($sessions -and $sessions.Count -gt 0) {
+        try {
+            $sessions | ForEach-Object { [PSCustomObject]$_ } | Export-Csv -Path $CsvFile -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+            Write-Host "[SAVE] Session logs & CSV saved successfully." -ForegroundColor Cyan
+        } catch {}
     }
+}
+
+function Save-DailyStats {
+    param($dailyStats)
+    Save-JsonFile -Path $DailyStatsFile -Data $dailyStats
+}
+
+# Load or init data
+function Load-Data {
+    $data = @{
+        sessions = @()
+        dailyStats = [Ordered]@{}
+        activeSession = $null
+    }
+
+    # 1. Check Legacy Migration
+    if (Test-Path $LegacyLogFile) {
+        $content = Get-Content $LegacyLogFile -Raw
+        if (-not [string]::IsNullOrWhiteSpace($content)) {
+            $raw = $content | ConvertFrom-Json
+            $legacyData = ConvertTo-Hashtable $raw
+            
+            if ($legacyData.sessions) { $data.sessions = $legacyData.sessions }
+            if ($legacyData.dailyStats) { 
+                # Prune inner sessions from daily stats to save space
+                $prunedStats = [Ordered]@{}
+                foreach ($key in $legacyData.dailyStats.Keys) {
+                    $prunedStats[$key] = [Ordered]@{
+                        totalSeconds = $legacyData.dailyStats[$key].totalSeconds
+                        totalHms = $legacyData.dailyStats[$key].totalHms
+                    }
+                }
+                $data.dailyStats = $prunedStats 
+            }
+            if ($legacyData.activeSession) { $data.activeSession = $legacyData.activeSession }
+            
+            # Save properly into separated files
+            Save-Sessions $data.sessions
+            Save-DailyStats $data.dailyStats
+            Save-ActiveState $data.activeSession
+            
+            # Backup & Remove Legacy File
+            Rename-Item -Path $LegacyLogFile -NewName "work_log.json.legacy_backup" -Force
+            Write-Host "[MIGRATION] legacy work_log.json migrated to separated session logs!" -ForegroundColor Magenta
+        }
+    } else {
+        # 2. Normal Loading
+        if (Test-Path $SessionLogFile) {
+            $raw = Get-Content $SessionLogFile -Raw | ConvertFrom-Json
+            if ($raw -and $raw.sessions) { $data.sessions = ConvertTo-Hashtable $raw.sessions }
+        }
+        if (Test-Path $DailyStatsFile) {
+            $raw = Get-Content $DailyStatsFile -Raw | ConvertFrom-Json
+            if ($raw) { $data.dailyStats = ConvertTo-Hashtable $raw }
+        }
+        if (Test-Path $ActiveStateFile) {
+            $raw = Get-Content $ActiveStateFile -Raw | ConvertFrom-Json
+            if ($raw -and $raw.activeSession) { $data.activeSession = ConvertTo-Hashtable $raw.activeSession }
+        }
+    }
+    return $data
 }
 
 # Win32 API for Idle Time
@@ -225,19 +247,26 @@ function Stop-TrackerGracefully {
                 duration = [int]$duration
                 durationHms = Format-Duration $duration
             }
-            if ($null -eq $data.dailyStats.$today) { $data.dailyStats[$today] = [Ordered]@{ sessions = @(); totalSeconds = 0; totalHms = "00:00:00" } }
-            $data.dailyStats[$today].sessions += $session
+            if ($null -eq $data.dailyStats.$today) { $data.dailyStats[$today] = [Ordered]@{ totalSeconds = 0; totalHms = "00:00:00" } }
             $data.sessions += $session
             Write-Host "`n[SIG] Final session saved." -ForegroundColor Yellow
+            
+            $todaySessions = @($data.sessions | Where-Object { $_.date -eq $today })
+            $sum = ($todaySessions | ForEach-Object { $_.duration } | Measure-Object -Sum).Sum
+            $data.dailyStats[$today].totalSeconds = [int]$sum
+            $data.dailyStats[$today].totalHms = Format-Duration $sum
         }
     }
     $data.activeSession = $null # Clear heartbeat for clean exit
-    Save-Data $data
+    Save-Sessions $data.sessions
+    Save-DailyStats $data.dailyStats
+    Save-ActiveState $data.activeSession
     
     # Final report update
     $today = (Get-Date).ToString('yyyy-MM-dd')
-    if ($data.dailyStats[$today].sessions.Count -gt 0) {
-        Generate-DailyReport $today $data.dailyStats[$today].sessions | Out-Null
+    $todaySessions = @($data.sessions | Where-Object { $_.date -eq $today })
+    if ($todaySessions.Count -gt 0) {
+        Generate-DailyReport $today $todaySessions | Out-Null
     }
     
     Write-Host "[SIG] Tracker stopped." -ForegroundColor Red
@@ -251,32 +280,56 @@ function Start-Tracker {
     
     $data = Load-Data
     
-    # --- Recovery Logic ---
-    if ($data.activeSession) {
-        Write-Host ">>> Recovering unclosed session from $($data.activeSession.startTime)..." -ForegroundColor Magenta
-        $recSession = $data.activeSession
-        $today = $recSession.date
-        if ($null -eq $data.dailyStats.$today) { $data.dailyStats[$today] = [Ordered]@{ sessions = @(); totalSeconds = 0; totalHms = "00:00:00" } }
-        
-        $session = [Ordered]@{
-            date     = $today
-            start    = $recSession.startTime
-            end      = $recSession.lastHeartbeatTime
-            duration = [int]$recSession.duration
-            durationHms = Format-Duration $recSession.duration
-        }
-        $data.dailyStats[$today].sessions += $session
-        $data.sessions += $session
-        $data.activeSession = $null
-        Save-Data $data
-        # Update report after recovery
-        Generate-DailyReport $today $data.dailyStats[$today].sessions | Out-Null
-        Write-Host ">>> Session recovered successfully." -ForegroundColor Green
-    }
-    
     $isWorking = $false
     $sessionStart = $null
+
+    # --- Recovery Logic ---
+    if ($data.activeSession) {
+        $recSession = $data.activeSession
+        $today = $recSession.date
+        
+        # Calculate gap from last heartbeat
+        $lastHbStr = "$($recSession.date) $($recSession.lastHeartbeatTime)"
+        $lastHbTime = [DateTime]::ParseExact($lastHbStr, 'yyyy-MM-dd HH:mm:ss', $null)
+        $gapSeconds = ((Get-Date) - $lastHbTime).TotalSeconds
+        
+        if ($gapSeconds -le $InactivityThreshold) {
+            Write-Host ">>> Brief interruption detected ($([math]::Round($gapSeconds))s). Seamlessly resuming session from $($recSession.startTime)..." -ForegroundColor Magenta
+            $startStr = "$($recSession.date) $($recSession.startTime)"
+            $sessionStart = [DateTime]::ParseExact($startStr, 'yyyy-MM-dd HH:mm:ss', $null)
+            $isWorking = $true
+            Write-Host ">>> Session seamlessly resumed." -ForegroundColor Green
+        } else {
+            Write-Host ">>> Long gap detected. Finalizing unended session from $($recSession.startTime)..." -ForegroundColor Magenta
+            if ($null -eq $data.dailyStats.$today) { $data.dailyStats[$today] = [Ordered]@{ totalSeconds = 0; totalHms = "00:00:00" } }
+            
+            $session = [Ordered]@{
+                date     = $today
+                start    = $recSession.startTime
+                end      = $recSession.lastHeartbeatTime
+                duration = [int]$recSession.duration
+                durationHms = Format-Duration $recSession.duration
+            }
+            $data.sessions += $session
+            $data.activeSession = $null
+            
+            # Update Total
+            $todaySessions = @($data.sessions | Where-Object { $_.date -eq $today })
+            $sum = ($todaySessions | ForEach-Object { $_.duration } | Measure-Object -Sum).Sum
+            $data.dailyStats[$today].totalSeconds = [int]$sum
+            $data.dailyStats[$today].totalHms = Format-Duration $sum
+
+            Save-Sessions $data.sessions
+            Save-DailyStats $data.dailyStats
+            Save-ActiveState $data.activeSession
+            
+            # Update report after recovery
+            Generate-DailyReport $today $todaySessions | Out-Null
+            Write-Host ">>> Session finalized." -ForegroundColor Green
+        }
+    }
     $lastSaveTime = Get-Date
+    $lastLoopTime = Get-Date
 
     # Interruption Trap
     trap { Stop-TrackerGracefully $data $isWorking $sessionStart; break }
@@ -285,10 +338,10 @@ function Start-Tracker {
         $idleSeconds = [IdleTime]::GetIdleTime()
         $now = Get-Date
         $today = $now.ToString('yyyy-MM-dd')
-        
+
         if ($null -eq $data.dailyStats) { $data.dailyStats = [Ordered]@{} }
         if (-not $data.dailyStats.ContainsKey($today)) {
-            $data.dailyStats[$today] = [Ordered]@{ sessions = @(); totalSeconds = 0; totalHms = "00:00:00" }
+            $data.dailyStats[$today] = [Ordered]@{ totalSeconds = 0; totalHms = "00:00:00" }
         }
         
         if ($idleSeconds -lt $InactivityThreshold) {
@@ -315,14 +368,19 @@ function Start-Tracker {
                 }
                 
                 # Save old part
-                if (-not $data.dailyStats.ContainsKey($oldDate)) { $data.dailyStats[$oldDate] = [Ordered]@{ sessions = @(); totalSeconds = 0; totalHms = "00:00:00" } }
-                $data.dailyStats[$oldDate].sessions += $session
+                if (-not $data.dailyStats.ContainsKey($oldDate)) { $data.dailyStats[$oldDate] = [Ordered]@{ totalSeconds = 0; totalHms = "00:00:00" } }
                 $data.sessions += $session
+                
+                $oldDateSessions = @($data.sessions | Where-Object { $_.date -eq $oldDate })
+                $sum = ($oldDateSessions | ForEach-Object { $_.duration } | Measure-Object -Sum).Sum
+                $data.dailyStats[$oldDate].totalSeconds = [int]$sum
+                $data.dailyStats[$oldDate].totalHms = Format-Duration $sum
                 
                 # Start new part
                 $sessionStart = $now.Date # 00:00:00 today
                 Write-Host "[$($now.ToString('HH:mm:ss'))] Midnight Split - New day session started." -ForegroundColor Magenta
-                Save-Data $data
+                Save-Sessions $data.sessions
+                Save-DailyStats $data.dailyStats
             }
             
             # Heartbeat Save (every 30 seconds)
@@ -335,7 +393,7 @@ function Start-Tracker {
                     duration = [int]$duration
                     durationHms = Format-Duration $duration
                 }
-                Save-Data $data
+                Save-ActiveState $data.activeSession
             }
 
         } else {
@@ -352,20 +410,22 @@ function Start-Tracker {
                         duration = [int]$duration
                         durationHms = Format-Duration $duration
                     }
-                    $data.dailyStats[$today].sessions += $session
                     if ($null -eq $data.sessions) { $data.sessions = @() }
                     $data.sessions += $session
                     
                     # Update Total
-                    $sum = ($data.dailyStats[$today].sessions | ForEach-Object { $_.duration } | Measure-Object -Sum).Sum
+                    $todaySessions = @($data.sessions | Where-Object { $_.date -eq $today })
+                    $sum = ($todaySessions | ForEach-Object { $_.duration } | Measure-Object -Sum).Sum
                     $data.dailyStats[$today].totalSeconds = [int]$sum
                     $data.dailyStats[$today].totalHms = Format-Duration $sum
                     
                     Write-Host "[$($now.ToString('HH:mm:ss'))] Session End - Duration: $(Format-Duration $duration)" -ForegroundColor Yellow
                     $data.activeSession = $null
-                    Save-Data $data
+                    Save-Sessions $data.sessions
+                    Save-DailyStats $data.dailyStats
+                    Save-ActiveState $data.activeSession
                     # Update report immediately after saving session
-                    Generate-DailyReport $today $data.dailyStats[$today].sessions | Out-Null
+                    Generate-DailyReport $today $todaySessions | Out-Null
                 }
                 $sessionStart = $null
             }
@@ -373,11 +433,12 @@ function Start-Tracker {
         
         # Periodic report saving
         if (($now - $lastSaveTime).TotalMinutes -gt $ReportIntervalMinutes) {
-            if ($data.dailyStats[$today].sessions.Count -gt 0) {
-                $totalSeconds = Generate-DailyReport $today $data.dailyStats[$today].sessions
+            $todaySessions = @($data.sessions | Where-Object { $_.date -eq $today })
+            if ($todaySessions.Count -gt 0) {
+                $totalSeconds = Generate-DailyReport $today $todaySessions
                 $data.dailyStats[$today].totalSeconds = [int]$totalSeconds
                 $data.dailyStats[$today].totalHms = Format-Duration $totalSeconds
-                Save-Data $data
+                Save-DailyStats $data.dailyStats
                 Write-Host "[$($now.ToString('HH:mm:ss'))] Auto Save & Report updated." -ForegroundColor Cyan
             }
             $lastSaveTime = $now

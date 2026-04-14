@@ -1,5 +1,6 @@
 param(
-    [string]$DataFolder = "C:\Users\sim\WorkTimeData"
+    [string]$DataFolder = "$env:USERPROFILE\WorkTimeData",
+    [string[]]$Dates = $null
 )
 
 # Helper: Convert seconds to HH:MM:SS
@@ -13,12 +14,16 @@ function Format-Duration {
 }
 
 # Load JSON data
-$logFile = Join-Path $DataFolder "work_log.json"
+$logFile = Join-Path $DataFolder "session_log.json"
 $jsonData = Get-Content $logFile -Raw | ConvertFrom-Json
 $allSessions = $jsonData.sessions
 
 # Dates to regenerate
-$datesToFix = @("2026-04-05", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10")
+if ($null -ne $Dates -and $Dates.Count -gt 0) {
+    $datesToFix = $Dates
+} else {
+    $datesToFix = @((Get-Date).ToString("yyyy-MM-dd")) # Default to today if nothing provided
+}
 
 foreach ($date in $datesToFix) {
     $dateSessions = @($allSessions | Where-Object { $_.date -eq $date })

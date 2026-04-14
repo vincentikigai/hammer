@@ -6,29 +6,38 @@ This document provides a visual overview of the `work_time_tracker.ps1` script's
 flowchart TD
     A["Script Start"] --> B["Initialize Settings<br/>(DataFolder, Thresholds)"]
     B --> C["Load Existing Data<br/>(sessions, dailyStats, activeSession)"]
-    C --> D{"Is activeSession present?"}
-    D -->|"Yes"| E["Recovery Logic:<br/>Save unclosed session<br/>up to lastHeartbeatTime"]
+    C --> D{"Is activeSession present?<br/>(Means an unended session)"}
+    D -->|"Yes"| D1{"(Now - lastHeartbeatTime)<br/>> InactivityThreshold?"}
+    D1 -->|"Yes (Gap too large)"| E["Finalize unended session<br/>up to lastHeartbeatTime"]
+    D1 -->|"No (Brief interruption)"| E1["Seamlessly Resume Session<br/>(Keep activeSession)"]
     D -->|"No"| F["Enter Main Loop"]
     E --> F
+    E1 --> F
 
     subgraph Loop ["Main Monitoring Loop"]
-        F --> G["Get Idle Time via Win32 API"]
-        G --> H{"Idle Time < Threshold?"}
+        F --> F1{"Time since last loop<br/>> InactivityThreshold?"}
+        F1 -->|"Yes (System Slept)"| F2{"Is already working?"}
+        F2 -->|"Yes"| F3["End Session retroactively<br/>at lastHeartbeatTime"]
+        F3 --> G["Get Idle Time via Win32 API"]
+        F2 -->|"No"| G
+        F1 -->|"No (Normal)"| G
+        
+        G --> H{"Idle Time < InactivityThreshold?"}
         
         H -->|"Yes (Active)"| I{"Is already working?"}
         I -->|"No"| J["Start New Session"]
         I -->|"Yes"| K{"Day Changed<br/>(Midnight Split)?"}
         
         K -->|"Yes"| L["End previous day session<br/>Start new day session"]
-        K -->|"No"| M["Heartbeat Check:<br/>Every 30s, update activeSession<br/>& save to disk"]
+        K -->|"No"| M["Heartbeat Check:<br/>Every 30s, save activeSession<br/>to active_state.json"]
         
         H -->|"No (Idle)"| N{"Is working?"}
-        N -->|"Yes"| O["End Session:<br/>Save to dailyStats & sessions<br/>Clear activeSession"]
+        N -->|"Yes"| O["End Session:<br/>Save to session_log.json & daily_stats.json<br/>Clear activeSession"]
         N -->|"No"| P["Wait 1 second"]
         
         J --> M
         L --> M
-        M --> Q["Periodic Report Check:<br/>Every ReportIntervalMinutes,<br/>generate MD report"]
+        M --> Q["Periodic Report Check & Update LastLoopTime:<br/>Every ReportIntervalMinutes,<br/>generate MD report"]
         O --> Q
         P --> Q
         Q --> F
@@ -44,7 +53,7 @@ flowchart TD
 ## Logic Highlights
 
 ### 1. Startup Recovery
-If the script or system crashes, the `activeSession` heartbeat allows the tracker to "recover" the lost session on the next start, ensuring that your work time is not lost.
+"activeSession present" means an unended session was found saved on disk, indicating a previous instance of the script was closed improperly. On startup, the tracker checks the time gap since the last heartbeat. If the gap is small (less than `$InactivityThreshold`), it seamlessly resumes the session. If the gap is large, it finalizes the lost session up to the last heartbeat to ensure work time is not lost.
 
 ### 2. Midnight Split
 Sessions that span across midnight are automatically split into two parts: one ending at 23:59:59 of the previous day, and another starting at 00:00:00 of the new day. This ensures accurate daily statistics.
@@ -57,3 +66,6 @@ To prevent data loss, the script saves its state every 30 seconds while you are 
 
 ### 5. Graceful Exit
 When you terminate the script (e.g., by closing the terminal or pressing `Ctrl+C`), a `trap` block captures the interruption and ensures the current session is saved correctly before exiting.
+
+### 6. Sleep/Suspend Detection
+If the computer is put to sleep while working, the loop measures an unexpectedly large time delta (greater than `$InactivityThreshold`) upon waking up. When this is detected, the script gracefully recovers by closing the session retroactively at the time of the last heartbeat, preventing the sleep duration from being logged as active work time.

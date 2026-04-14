@@ -16,6 +16,9 @@ A robust, lightweight PowerShell utility to automatically monitor user activity 
 - `work_time_tracker.Tests.ps1`: Pester unit tests for core logic.
 - `BACKLOG.md`: Future roadmap and pending features.
 
+## 📐 Architecture & Design Principles
+- **Domain Driven Design (DDD)**: We try to lean workflows and components closer to pure Domain Driven Design. For high-level behavioral modeling, see `domain_logic.md` which models **Domain behavior and processes** (e.g. `State: Active`, `Event: User Input Detected`). For the lower-level technical architecture spanning script constructs (like Windows API calls and execution loops), see `flowchart.md`. We keep these separated so we do not use hybrid models that mix Domain behaviors with Implementation details.
+
 ## ⚙️ Requirements
 - **Windows OS** (uses `user32.dll` for idle detection).
 - **PowerShell 5.1 or later**.
@@ -40,4 +43,15 @@ Invoke-Pester -Path .\work_time_tracker.Tests.ps1
 
 ## 📝 Troubleshooting
 - **Execution Policy**: If blocked, run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
-- **Manual Reset**: Delete `work_log.json` and `work_sessions.csv` to start with a fresh history.
+- **Manual Reset**: Delete `session_log.json`, `active_state.json`, `daily_stats.json` and `session_history.csv` to start with a fresh history.
+
+## 📅 Regenerating Reports
+If you need to regenerate the daily `.md` report for today or a specific past date (e.g., if you manually edited the `session_log.json`), use the `regenerate_reports.ps1` script:
+
+```powershell
+# Regenerate for today
+.\regenerate_reports.ps1
+
+# Regenerate for specific dates
+.\regenerate_reports.ps1 -Dates "2026-04-14", "2026-04-13"
+```
