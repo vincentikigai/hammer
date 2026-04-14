@@ -43,7 +43,7 @@ Invoke-Pester -Path .\work_time_tracker.Tests.ps1
 
 ## 📝 Troubleshooting
 - **Execution Policy**: If blocked, run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
-- **Manual Reset**: Delete `session_log.json`, `active_state.json`, `daily_stats.json` and `session_history.csv` to start with a fresh history.
+- **Manual Reset**: Delete `session_log.json`, `active_state.json` and `session_history.csv` to start with a fresh history.
 
 ## 📅 Regenerating Reports
 If you need to regenerate the daily `.md` report for today or a specific past date (e.g., if you manually edited the `session_log.json`), use the `regenerate_reports.ps1` script:

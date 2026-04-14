@@ -13,10 +13,25 @@ function Format-Duration {
     return "{0:D2}:{1:D2}:{2:D2}" -f [int]$hours, [int]$minutes, [int]$secs
 }
 
-# Load JSON data
-$logFile = Join-Path $DataFolder "session_log.json"
-$jsonData = Get-Content $logFile -Raw | ConvertFrom-Json
-$allSessions = $jsonData.sessions
+# Helper: Atomic JSON save
+function Save-JsonFile {
+    param($Path, $Data)
+    $tempFile = "$Path.tmp"
+    $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $tempFile -Encoding UTF8
+    if (Test-Path $Path) { Remove-Item $Path -Force }
+    Move-Item $tempFile $Path -Force
+}
+
+# Load session log
+$sessionLogFile  = Join-Path $DataFolder "session_log.json"
+
+if (-not (Test-Path $sessionLogFile)) {
+    Write-Host "✗ session_log.json not found at $DataFolder" -ForegroundColor Red
+    exit 1
+}
+
+$jsonData = Get-Content $sessionLogFile -Raw | ConvertFrom-Json
+$allSessions = @($jsonData.sessions)
 
 # Dates to regenerate
 if ($null -ne $Dates -and $Dates.Count -gt 0) {
@@ -29,13 +44,13 @@ foreach ($date in $datesToFix) {
     $dateSessions = @($allSessions | Where-Object { $_.date -eq $date })
     
     if ($dateSessions.Count -gt 0) {
-        Write-Host "Regenerating report for $date with $($dateSessions.Count) sessions" -ForegroundColor Cyan
+        Write-Host "Regenerating for $date with $($dateSessions.Count) sessions..." -ForegroundColor Cyan
         
         # Sort sessions
         $sortedSessions = @($dateSessions | Sort-Object { [datetime]::ParseExact($_.start, 'HH:mm:ss', $null) })
         
         # Calculate totals
-        $totalSeconds = ($sortedSessions | Measure-Object -Property duration -Sum).Sum
+        $totalSeconds = ($sortedSessions | ForEach-Object { [int]$_.duration } | Measure-Object -Sum).Sum
         $sessionCount = $sortedSessions.Count
         
         # Build markdown report
@@ -60,10 +75,7 @@ foreach ($date in $datesToFix) {
                 try {
                     $eTime = [datetime]::ParseExact($current.end, 'HH:mm:ss', $null)
                     $sTime = [datetime]::ParseExact($next.start, 'HH:mm:ss', $null)
-                    # Handle same-day or next-day gap
-                    if ($sTime -le $eTime) {
-                        $sTime = $sTime.AddDays(1)
-                    }
+                    if ($sTime -le $eTime) { $sTime = $sTime.AddDays(1) }
                     $gap = ($sTime - $eTime).TotalSeconds
                     if ($gap -gt 0) {
                         $report += "| _Break_ | _$(Format-Duration $gap)_ | _Interruption_ |`n"
@@ -75,10 +87,10 @@ foreach ($date in $datesToFix) {
         # Save report
         $reportFile = Join-Path $DataFolder "report_$($date -replace '/','-').md"
         $report | Set-Content $reportFile -Encoding UTF8
-        Write-Host "✓ Report saved: $reportFile (Total: $(Format-Duration $totalSeconds), Sessions: $sessionCount)" -ForegroundColor Green
+        Write-Host "  ✓ Report saved (Total: $(Format-Duration $totalSeconds), Sessions: $sessionCount)" -ForegroundColor Green
     } else {
         Write-Host "⚠ No sessions found for $date" -ForegroundColor Yellow
     }
 }
 
-Write-Host "`n✓ All reports regenerated successfully!" -ForegroundColor Green
+Write-Host "`n✓ All done!" -ForegroundColor Green
