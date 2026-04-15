@@ -296,14 +296,48 @@ function Start-Tracker {
         }
     }
     $lastSaveTime = Get-Date
+    $lastLoopTime = Get-Date
 
     # Interruption Trap
     trap { Stop-TrackerGracefully $data $isWorking $sessionStart; break }
 
     while ($true) {
-        $idleSeconds = [IdleTime]::GetIdleTime()
         $now   = Get-Date
         $today = $now.ToString('yyyy-MM-dd')
+
+        # --- Sleep/Suspend Detection (F1 in flowchart) ---
+        $loopGap = ($now - $lastLoopTime).TotalSeconds
+        if ($loopGap -gt $InactivityThreshold) {
+            # System was suspended - time jumped unexpectedly
+            if ($isWorking) {
+                # Retroactively end session at last known awake time (F2→F3)
+                $sessionEnd = $lastLoopTime
+                $duration   = ($sessionEnd - $sessionStart).TotalSeconds
+                if ($duration -gt 1) {
+                    $endDate = $sessionStart.ToString('yyyy-MM-dd')
+                    $session = [Ordered]@{
+                        date        = $endDate
+                        start       = $sessionStart.ToString('HH:mm:ss')
+                        end         = $sessionEnd.ToString('HH:mm:ss')
+                        duration    = [int]$duration
+                        durationHms = Format-Duration $duration
+                    }
+                    $data.sessions += $session
+                    Write-Host "[$($now.ToString('HH:mm:ss'))] Sleep detected! Session ended retroactively at $($sessionEnd.ToString('HH:mm:ss')) ($(Format-Duration $duration))" -ForegroundColor Magenta
+                }
+                $isWorking    = $false
+                $sessionStart = $null
+                $data.activeSession = $null
+                Save-Sessions $data.sessions
+                Save-ActiveState $data.activeSession
+
+                $todaySessions = @($data.sessions | Where-Object { $_.date -eq $endDate })
+                Generate-DailyReport $endDate $todaySessions | Out-Null
+            }
+        }
+        $lastLoopTime = $now
+
+        $idleSeconds = [IdleTime]::GetIdleTime()
 
         if ($idleSeconds -lt $InactivityThreshold) {
             # Active
