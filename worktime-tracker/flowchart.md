@@ -28,7 +28,7 @@ flowchart TD
         I -->|"No"| J["Start New Session"]
         I -->|"Yes"| K{"Day Changed<br/>(Midnight Split)?"}
         
-        K -->|"Yes"| L["End previous day session<br/>Start new day session"]
+        K -->|"Yes"| L["End previous day session & generate its final MD report<br/>Start new day session"]
         K -->|"No"| M["Heartbeat Check:<br/>Every 30s, save activeSession<br/>to active_state.json"]
         
         H -->|"No (Idle)"| N{"Is working?"}

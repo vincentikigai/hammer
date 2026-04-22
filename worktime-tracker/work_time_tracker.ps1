@@ -364,6 +364,10 @@ function Start-Tracker {
                 $sessionStart = $now.Date # 00:00:00 today
                 Write-Host "[$($now.ToString('HH:mm:ss'))] Midnight Split - New day session started." -ForegroundColor Magenta
                 Save-Sessions $data.sessions
+                
+                # Update the final report for the old day
+                $oldDaySessions = @($data.sessions | Where-Object { $_.date -eq $oldDate })
+                Generate-DailyReport $oldDate $oldDaySessions | Out-Null
             }
 
             # Heartbeat Save (every 30 seconds)

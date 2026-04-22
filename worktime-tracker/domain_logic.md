@@ -27,7 +27,7 @@ flowchart TD
         StateWorking -->|"Event: Inactivity Threshold Exceeded"| EndSession["Action: End Session"]
         EndSession --> StateIdle
 
-        StateWorking -->|"Event: Midnight Reached"| SplitSession["Action: Split Session<br/>(End yesterday, Start today)"]
+        StateWorking -->|"Event: Midnight Reached"| SplitSession["Action: Split Session &<br/>Generate yesterday's final MD Report"]
         SplitSession --> StateWorking
         
         StateWorking -->|"Event: Heartbeat Tick (30s)"| UpdateDisk["Action: Save activeSession<br/>heartbeat to disk"]
@@ -54,7 +54,7 @@ The domain operates primarily between two states: **Idle** and **Working**. Tran
 "activeSession present" means an unended session was found saved on disk, indicating a previous instance of the script was closed improperly. On startup, the tracker evaluates the time gap since the last heartbeat. If the gap is small (less than `$InactivityThreshold`), it seamlessly resumes the "Working" state. If it's a large gap (e.g., computer restarted the next day), it finalizes the lost session.
 
 ### 3. Event: Midnight Reached
-Sessions that span across midnight trigger an automatic split into two parts: one ending at 23:59:59 of the previous day, and another starting at 00:00:00 of the new day. This maintains accurate daily boundaries.
+Sessions that span across midnight trigger an automatic split into two parts: one ending at 23:59:59 of the previous day, and another starting at 00:00:00 of the new day. At the moment of this split, the final markdown report for the previous day is explicitly generated. This maintains accurate daily boundaries and ensures the previous day's log is complete.
 
 ### 4. Event: Inactivity Threshold Exceeded
 The domain considers the user "Working" as long as the time since their last input stays below the `$InactivityThreshold`. When this threshold is exceeded, the session ends.
