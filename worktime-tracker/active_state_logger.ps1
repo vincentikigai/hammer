@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 # Work Time Tracker - Enhanced Version (Supports Test Mode, Startup Recovery & Readable JSON)
-# Save as: WorkTimeTracker.ps1
+# Save as: active_state_logger.ps1
 
 param(
     [string]$DataFolder = "$env:USERPROFILE\WorkTimeData",

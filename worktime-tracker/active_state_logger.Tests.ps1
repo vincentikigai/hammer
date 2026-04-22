@@ -1,7 +1,7 @@
 Describe "WorkTimeTracker Utility Functions" {
     BeforeAll {
         # Dot-sourcing the script to load functions into the scope
-        . $PSScriptRoot\work_time_tracker.ps1
+        . $PSScriptRoot\active_state_logger.ps1
     }
 
     Context "Format-Duration" {

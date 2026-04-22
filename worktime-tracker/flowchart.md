@@ -1,6 +1,6 @@
 # Worktime Tracker Flowchart
 
-This document provides a visual overview of the `work_time_tracker.ps1` script's logic, including session tracking, recovery, and periodic reporting.
+This document provides a visual overview of the `active_state_logger.ps1` script's logic, including session tracking, recovery, and periodic reporting.
 
 ```mermaid
 flowchart TD

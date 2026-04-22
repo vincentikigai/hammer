@@ -11,9 +11,9 @@ A robust, lightweight PowerShell utility to automatically monitor user activity 
 - **Background Mode**: Run silently in the tray/background via the included `.bat` launcher.
 
 ## 📂 Project Structure
-- `work_time_tracker.ps1`: The core tracking engine.
-- `start_work_tracker.bat`: Launcher for background execution.
-- `work_time_tracker.Tests.ps1`: Pester unit tests for core logic.
+- `active_state_logger.ps1`: The core tracking engine.
+- `start_active_state_logger.bat`: Launcher for background execution.
+- `active_state_logger.Tests.ps1`: Pester unit tests for core logic.
 - `BACKLOG.md`: Future roadmap and pending features.
 
 ## 📐 Architecture & Design Principles
@@ -24,9 +24,9 @@ A robust, lightweight PowerShell utility to automatically monitor user activity 
 - **PowerShell 5.1 or later**.
 
 ## 🛠 Quick Start
-1.  **Run**: Double-click `start_work_tracker.bat` or run `.\work_time_tracker.ps1` in PowerShell.
+1.  **Run**: Double-click `start_active_state_logger.bat` or run `.\active_state_logger.ps1` in PowerShell.
 2.  **View**: Check your results in `$env:USERPROFILE\WorkTimeData`.
-3.  **Test**: Run `.\work_time_tracker.ps1 -TestMode` for a 5-second threshold test.
+3.  **Test**: Run `.\active_state_logger.ps1 -TestMode` for a 5-second threshold test.
 
 ## ⚙️ Configuration (Optional)
 | Parameter | Description | Default |
@@ -38,7 +38,7 @@ A robust, lightweight PowerShell utility to automatically monitor user activity 
 ## 🧪 Testing
 Requires [Pester](https://pester.dev/):
 ```powershell
-Invoke-Pester -Path .\work_time_tracker.Tests.ps1
+Invoke-Pester -Path .\active_state_logger.Tests.ps1
 ```
 
 ## 📝 Troubleshooting
