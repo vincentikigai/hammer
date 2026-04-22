@@ -25,13 +25,13 @@ A robust, lightweight PowerShell utility to automatically monitor user activity 
 
 ## 🛠 Quick Start
 1.  **Run**: Double-click `start_active_state_logger.bat` or run `.\active_state_logger.ps1` in PowerShell.
-2.  **View**: Check your results in `$env:USERPROFILE\WorkTimeData`.
+2.  **View**: Check your results in `$env:USERPROFILE\ActiveTime`.
 3.  **Test**: Run `.\active_state_logger.ps1 -TestMode` for a 5-second threshold test.
 
 ## ⚙️ Configuration (Optional)
 | Parameter | Description | Default |
 | :--- | :--- | :--- |
-| `-DataFolder` | Directory for logs and reports | `~\WorkTimeData` |
+| `-DataFolder` | Directory for logs and reports | `~\ActiveTime` |
 | `-InactivityThreshold` | Idle seconds before session ends | `180` |
 | `-ReportIntervalMinutes`| How often to update the MD report | `60` |
 

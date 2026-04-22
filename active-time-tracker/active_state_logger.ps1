@@ -3,7 +3,7 @@
 # Save as: active_state_logger.ps1
 
 param(
-    [string]$DataFolder = "$env:USERPROFILE\WorkTimeData",
+    [string]$DataFolder = $(if ($env:ACTIVE_TIME_FOLDER) { $env:ACTIVE_TIME_FOLDER } else { "$env:USERPROFILE\ActiveTime" }),
     [int]$InactivityThreshold = 180,
     [int]$ReportIntervalMinutes = 60,
     [switch]$TestMode
@@ -16,7 +16,7 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 }
 
 if ($TestMode) {
-    $DataFolder = "$env:USERPROFILE\WorkTimeDataTest"
+    $DataFolder = "$env:USERPROFILE\ActiveTimeTest"
     $InactivityThreshold = 5
     $ReportIntervalMinutes = 1
     Write-Host ">>> Test Mode Enabled - Threshold: $InactivityThreshold s | Interval: $ReportIntervalMinutes min <<<" -ForegroundColor White -BackgroundColor DarkMagenta

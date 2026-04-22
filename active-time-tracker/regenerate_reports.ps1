@@ -1,5 +1,5 @@
 param(
-    [string]$DataFolder = "$env:USERPROFILE\WorkTimeData",
+    [string]$DataFolder = $(if ($env:ACTIVE_TIME_FOLDER) { $env:ACTIVE_TIME_FOLDER } else { "$env:USERPROFILE\ActiveTime" }),
     [string[]]$Dates = $null
 )
 
