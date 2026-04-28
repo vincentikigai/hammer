@@ -10,7 +10,7 @@ flowchart TD
     C --> D["Enter Main Loop"]
     
     subgraph Loop ["Monitoring Loop"]
-        D --> E["Ping google.com<br/>(Primary)"]
+        D --> E["Check google.com<br/>(TCP/HTTP)"]
         E --> F{"Google Success?"}
         
         F -->|"Yes"| G["State: Connected<br/>Light: Green"]
@@ -19,7 +19,7 @@ flowchart TD
         I -->|"Yes"| J["Notify: 'Internet Restored'<br/>Light: Green/Info"]
         I -->|"No"| K["Log: Connected"]
         
-        F -->|"No"| L["Ping baidu.com<br/>(Fallback)"]
+        F -->|"No"| L["Check baidu.com<br/>(TCP/HTTP)"]
         L --> M{"Baidu Success?"}
         
         M -->|"Yes"| N["State: GlobalDown<br/>Light: Yellow"]

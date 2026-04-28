@@ -173,17 +173,41 @@ Notify -Title "$L_GREEN Internet Monitor Started" -Message "Monitoring connectiv
 Write-Host ">> If you saw a notification, everything is working!"
 Write-Host ""
 
+# ── Connectivity Check Helper ────────────────────────────────
+function Test-WebConnectivity {
+    param([string]$Target)
+    try {
+        # 1. Fast TCP connection (works well with TUN/TAP VPNs and avoids ICMP blocks)
+        $tcpClient = New-Object System.Net.Sockets.TcpClient
+        $task = $tcpClient.ConnectAsync($Target, 80)
+        $isOpened = $task.Wait(2000)
+        if ($isOpened -and $tcpClient.Connected) {
+            $tcpClient.Close()
+            return $true
+        }
+        $tcpClient.Close()
+    } catch {}
+
+    try {
+        # 2. Fallback to HTTP HEAD (handles system proxy settings if TUN is not used)
+        $resp = Invoke-WebRequest -Uri "http://$Target" -Method Head -TimeoutSec 3 -UseBasicParsing -ErrorAction SilentlyContinue
+        if ($null -ne $resp) { return $true }
+    } catch {}
+    
+    return $false
+}
+
 # ── Main loop ────────────────────────────────────────────────
 $currentState = "Connected" # Connected, GlobalDown, InternetDown
 
 try {
     while ($true) {
 
-        $pingGlobal = Test-Connection -ComputerName $GLOBAL_TARGET -Count 1 -Quiet -ErrorAction SilentlyContinue
+        $pingGlobal = Test-WebConnectivity -Target $GLOBAL_TARGET
         $pingLocal  = $false
         
         if (-not $pingGlobal) {
-            $pingLocal = Test-Connection -ComputerName $LOCAL_TARGET -Count 1 -Quiet -ErrorAction SilentlyContinue
+            $pingLocal = Test-WebConnectivity -Target $LOCAL_TARGET
         }
         
         $ts    = Get-Date -Format "HH:mm:ss"

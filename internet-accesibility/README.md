@@ -4,7 +4,7 @@ A utility to monitor your internet and VPN connectivity. It provides granular st
 
 ## Features
 
-- **Granular Monitoring**: Pings `google.com` (Global) and `baidu.com` (Local) to identify the nature of a disconnect.
+- **Granular Monitoring**: Checks connectivity via TCP/HTTP to `google.com` (Global) and `baidu.com` (Local) to identify the nature of a disconnect. This approach reliably bypasses common ICMP (Ping) restrictions on VPNs and proxies.
 - **Color-Coded Status**: 
     - **🟢 Green**: Connected (Primary: `google.com`).
     - **🟡 Yellow**: Global Internet Not Reachable (Google down, Baidu up).
