@@ -5,7 +5,7 @@ This document illustrates the pure Domain Driven Design (DDD) model for the work
 ```mermaid
 flowchart TD
     subgraph Initialization ["Startup & Recovery Domain"]
-        Start(("Script Start")) --> LoadData["Load Data & activeSession"]
+        Start(("Tracker Start")) --> LoadData["Load Data & activeSession"]
         LoadData --> IsActive{"Unended activeSession<br/>present?"}
         
         IsActive -->|"Yes"| CheckGap{"(Now - lastHeartbeatTime)<br/>> InactivityThreshold?"}
@@ -38,9 +38,9 @@ flowchart TD
     end
 
     subgraph Termination ["Termination Domain"]
-        StateIdle -.->|"Event: Script Terminated"| CleanExit["Action: Graceful Exit"]
-        StateWorking -.->|"Event: Script Terminated"| GracefulExit["Action: Save current session<br/>& clear activeSession"]
-        GracefulExit --> End(("Script End"))
+        StateIdle -.->|"Event: Tracker Terminated"| CleanExit["Action: Graceful Exit"]
+        StateWorking -.->|"Event: Tracker Terminated"| GracefulExit["Action: Save current session<br/>& clear activeSession"]
+        GracefulExit --> End(("Tracker End"))
         CleanExit --> End
     end
 ```
@@ -51,7 +51,7 @@ flowchart TD
 The domain operates primarily between two states: **Idle** and **Working**. Transitions between these states are triggered by pure domain events (e.g., User Input, Inactivity, Midnight, System Suspend).
 
 ### 2. Event: Startup Recovery
-"activeSession present" means an unended session was found saved on disk, indicating a previous instance of the script was closed improperly. On startup, the tracker evaluates the time gap since the last heartbeat. If the gap is small (less than `$InactivityThreshold`), it seamlessly resumes the "Working" state. If it's a large gap (e.g., computer restarted the next day), it finalizes the lost session.
+"activeSession present" means an unended session was found saved on disk, indicating a previous instance of the tracker was closed improperly. On startup, the tracker evaluates the time gap since the last heartbeat. If the gap is small (less than `$InactivityThreshold`), it seamlessly resumes the "Working" state. If it's a large gap (e.g., computer restarted the next day), it finalizes the lost session.
 
 ### 3. Event: Midnight Reached
 Sessions that span across midnight trigger an automatic split into two parts: one ending at 23:59:59 of the previous day, and another starting at 00:00:00 of the new day. At the moment of this split, the final markdown report for the previous day is explicitly generated. This maintains accurate daily boundaries and ensures the previous day's log is complete.

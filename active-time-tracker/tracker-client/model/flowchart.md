@@ -1,11 +1,11 @@
 # Worktime Tracker Flowchart
 
-This document provides a visual overview of the `active_state_logger.ps1` script's logic, including session tracking, recovery, and periodic reporting.
+This document provides a visual overview of the Go tracker client's logic, including session tracking, recovery, and periodic reporting.
 
 ```mermaid
 flowchart TD
     A["Script Start"] --> B["Initialize Settings<br/>(DataFolder, Thresholds)"]
-    B --> C["Load Existing Data<br/>(sessions, dailyStats, activeSession)"]
+    B --> C["Load Existing Data<br/>(sessions, activeSession)"]
     C --> D{"Is activeSession present?<br/>(Means an unended session)"}
     D -->|"Yes"| D1{"(Now - lastHeartbeatTime)<br/>> InactivityThreshold?"}
     D1 -->|"Yes (Gap too large)"| E["Finalize unended session<br/>up to lastHeartbeatTime"]
@@ -18,7 +18,7 @@ flowchart TD
         F --> F1{"Time since last loop<br/>> InactivityThreshold?"}
         F1 -->|"Yes (System Slept)"| F2{"Is already working?"}
         F2 -->|"Yes"| F3["End Session retroactively<br/>at lastHeartbeatTime"]
-        F3 --> G["Get Idle Time via Win32 API"]
+        F3 --> G["Get Idle Time via OS-specific API"]
         F2 -->|"No"| G
         F1 -->|"No (Normal)"| G
         
@@ -32,7 +32,7 @@ flowchart TD
         K -->|"No"| M["Heartbeat Check:<br/>Every 30s, save activeSession<br/>to active_state.json"]
         
         H -->|"No (Idle)"| N{"Is working?"}
-        N -->|"Yes"| O["End Session:<br/>Save to session_log.json & daily_stats.json<br/>Clear activeSession"]
+        N -->|"Yes"| O["End Session:<br/>Save to [DeviceID]_session_log.json<br/>Clear activeSession"]
         N -->|"No"| P["Wait 1 second"]
         
         J --> M
@@ -45,7 +45,7 @@ flowchart TD
 
     Loop -->|"Termination (Ctrl+C)"| R
     subgraph Termination ["Termination Path"]
-        R["Trap Block:<br/>Save current session<br/>Clear activeSession<br/>Update final report"]
+        R["Signal Handler (Ctrl+C):<br/>Save current session<br/>Clear activeSession<br/>Update final report"]
         R --> S["Script End"]
     end
 ```
@@ -59,13 +59,13 @@ flowchart TD
 Sessions that span across midnight are automatically split into two parts: one ending at 23:59:59 of the previous day, and another starting at 00:00:00 of the new day. This ensures accurate daily statistics.
 
 ### 3. Idle Detection
-The script uses the Windows `GetLastInputInfo` API to detect when you've been inactive. A session only counts as "work" if your idle time stays below the `$InactivityThreshold`.
+The client uses OS-specific APIs (e.g. `GetLastInputInfo` on Windows, `ioreg` on macOS, `xprintidle` on Linux) to detect when you've been inactive. A session only counts as "work" if your idle time stays below the `$InactivityThreshold`.
 
 ### 4. Heartbeat System
-To prevent data loss, the script saves its state every 30 seconds while you are working. This "heartbeat" is what enables the recovery system.
+To prevent data loss, the client saves its state every 30 seconds while you are working. This "heartbeat" is what enables the recovery system.
 
 ### 5. Graceful Exit
-When you terminate the script (e.g., by closing the terminal or pressing `Ctrl+C`), a `trap` block captures the interruption and ensures the current session is saved correctly before exiting.
+When you terminate the client (e.g., by closing the terminal or pressing `Ctrl+C`), a signal handler captures the interruption and ensures the current session is saved correctly before exiting.
 
 ### 6. Sleep/Suspend Detection
-If the computer is put to sleep while working, the loop measures an unexpectedly large time delta (greater than `$InactivityThreshold`) upon waking up. When this is detected, the script gracefully recovers by closing the session retroactively at the time of the last heartbeat, preventing the sleep duration from being logged as active work time.
+If the computer is put to sleep while working, the loop measures an unexpectedly large time delta (greater than `$InactivityThreshold`) upon waking up. When this is detected, the client gracefully recovers by closing the session retroactively at the time of the last heartbeat, preventing the sleep duration from being logged as active work time.

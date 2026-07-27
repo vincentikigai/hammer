@@ -1,32 +1,53 @@
 # 🕒 Worktime Tracker
 
-A robust, lightweight PowerShell utility to automatically monitor user activity and log work sessions with zero manual effort.
+A robust, lightweight utility to automatically monitor user activity and log work sessions with zero manual effort. 
+It features a cross-platform **Go client** that supports syncing multiple devices (Windows, Mac, Linux) into a single unified Markdown report via Cloud Sync.
 
 ## 🚀 Key Features
-- **Smart Activity Detection**: Automatically tracks sessions based on mouse and keyboard input.
+- **Multi-Device & Cross-Platform**: Run on Windows, macOS, and Linux. Syncs via any shared folder (OneDrive, Dropbox) to generate unified reports.
+- **Smart Activity Detection**: Automatically tracks sessions based on mouse and keyboard input natively on each OS.
 - **Dual Logging**: Maintains a structured **JSON** log for internal logic and a flat **CSV** export for Excel/Spreadsheet analysis.
-- **Markdown Reports**: Generates professional daily summaries (`.md`) with session tables and break tracking.
+- **Markdown Reports**: Generates professional daily summaries (`.md`) with session tables and break tracking for all your devices merged together.
 - **Safety & Persistence**: 30-second heartbeats and auto-recovery ensure data isn't lost during power outages.
 - **Midnight Splitting**: Automatically splits sessions at 12:00 AM for 100% accurate daily totals.
-- **Background Mode**: Run silently in the tray/background via the included `.bat` launcher.
 
 ## 📂 Project Structure
-- `active_state_logger.ps1`: The core tracking engine.
-- `start_active_state_logger.bat`: Launcher for background execution.
-- `active_state_logger.Tests.ps1`: Pester unit tests for core logic.
-- `BACKLOG.md`: Future roadmap and pending features.
-
-## 📐 Architecture & Design Principles
-- **Domain Driven Design (DDD)**: We try to lean workflows and components closer to pure Domain Driven Design. For high-level behavioral modeling, see `domain_logic.md` which models **Domain behavior and processes** (e.g. `State: Active`, `Event: User Input Detected`). For the lower-level technical architecture spanning script constructs (like Windows API calls and execution loops), see `flowchart.md`. We keep these separated so we do not use hybrid models that mix Domain behaviors with Implementation details.
+- `tracker-client/`: The modern cross-platform Go tracking engine (Recommended).
+- `active_state_logger.ps1`: The legacy Windows-only PowerShell tracking engine.
+- `domain_logic.md` & `flowchart.md`: Core Domain Driven Design (DDD) specifications used across both implementations.
 
 ## ⚙️ Requirements
-- **Windows OS** (uses `user32.dll` for idle detection).
-- **PowerShell 5.1 or later**.
+- **Windows OS**: Works out of the box.
+- **macOS**: Works out of the box.
+- **Linux**: Requires `xprintidle` installed (e.g. `sudo apt-get install xprintidle`).
 
-## 🛠 Quick Start
+## 🛠 Quick Start (Cross-Platform Go Client)
+
+**To run locally or build from source:**
+1.  Navigate to the Go client folder: `cd tracker-client`
+2.  Run the tracker: `go run .` (or `.\active-time-tracker.exe`)
+3.  Check your results in `~/ActiveTime` (or your `$ACTIVE_TIME_FOLDER`).
+
+**To cross-compile for Mac/Linux from Windows:**
+You can build the executable for your Mac or Linux machine without installing Go on those devices.
+```powershell
+cd tracker-client
+
+# For macOS (Intel / Apple Silicon):
+$env:GOOS="darwin"
+$env:GOARCH="amd64" # Use "arm64" for Apple Silicon (M1/M2/M3)
+go build -o active-time-tracker-mac .
+
+# For Linux:
+$env:GOOS="linux"
+$env:GOARCH="amd64"
+go build -o active-time-tracker-linux .
+```
+Transfer the resulting file to your device, make it executable (`chmod +x ./active-time-tracker-mac`), and run it.
+
+## 🛠 Quick Start (Legacy PowerShell Version)
 1.  **Run**: Double-click `start_active_state_logger.bat` or run `.\active_state_logger.ps1` in PowerShell.
-2.  **View**: Check your results in `$env:USERPROFILE\ActiveTime`.
-3.  **Test**: Run `.\active_state_logger.ps1 -TestMode` for a 5-second threshold test.
+2.  **Test**: Run `.\active_state_logger.ps1 -TestMode` for a 5-second threshold test.
 
 ## ⚙️ Configuration (Optional)
 | Parameter | Description | Default |
