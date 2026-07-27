@@ -3,6 +3,27 @@ param(
     [string[]]$Dates = $null
 )
 
+function Resolve-DataFolderPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $Path
+    }
+
+    $expanded = [System.Environment]::ExpandEnvironmentVariables($Path)
+    if ($expanded -eq $Path -and $Path -match '%[^%]+%') {
+        foreach ($match in [regex]::Matches($Path, '%([^%]+)%')) {
+            $varName = $match.Groups[1].Value
+            $varValue = [Environment]::GetEnvironmentVariable($varName)
+            if (-not [string]::IsNullOrWhiteSpace($varValue)) {
+                $expanded = $expanded.Replace($match.Value, $varValue)
+            }
+        }
+    }
+
+    return $expanded
+}
+
 # Helper: Convert seconds to HH:MM:SS
 function Format-Duration {
     param($seconds)
@@ -21,6 +42,8 @@ function Save-JsonFile {
     if (Test-Path $Path) { Remove-Item $Path -Force }
     Move-Item $tempFile $Path -Force
 }
+
+$DataFolder = Resolve-DataFolderPath $DataFolder
 
 # Load session log
 $sessionLogFile  = Join-Path $DataFolder "session_log.json"

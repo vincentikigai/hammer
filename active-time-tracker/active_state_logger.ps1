@@ -9,6 +9,27 @@ param(
     [switch]$TestMode
 )
 
+function Resolve-DataFolderPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $Path
+    }
+
+    $expanded = [System.Environment]::ExpandEnvironmentVariables($Path)
+    if ($expanded -eq $Path -and $Path -match '%[^%]+%') {
+        foreach ($match in [regex]::Matches($Path, '%([^%]+)%')) {
+            $varName = $match.Groups[1].Value
+            $varValue = [Environment]::GetEnvironmentVariable($varName)
+            if (-not [string]::IsNullOrWhiteSpace($varValue)) {
+                $expanded = $expanded.Replace($match.Value, $varValue)
+            }
+        }
+    }
+
+    return $expanded
+}
+
 # Manual version check
 if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
     Write-Error "This script requires PowerShell 5.1 or later. Please upgrade your system."
@@ -22,6 +43,7 @@ if ($TestMode) {
     Write-Host ">>> Test Mode Enabled - Threshold: $InactivityThreshold s | Interval: $ReportIntervalMinutes min <<<" -ForegroundColor White -BackgroundColor DarkMagenta
 }
 
+$DataFolder = Resolve-DataFolderPath $DataFolder
 $LegacyLogFile  = "$DataFolder\work_log.json"
 $SessionLogFile = "$DataFolder\session_log.json"
 $ActiveStateFile= "$DataFolder\active_state.json"
@@ -29,7 +51,7 @@ $CsvFile        = "$DataFolder\session_history.csv"
 
 # Create folder
 if (-not (Test-Path $DataFolder)) {
-    New-Item -ItemType Directory -Path $DataFolder | Out-Null
+    New-Item -ItemType Directory -Path $DataFolder -Force | Out-Null
 }
 
 # Helper: Convert seconds to Time (HH:mm:ss)

@@ -28,4 +28,12 @@ Describe "WorkTimeTracker Utility Functions" {
             $hash.Meta.ID | Should Be 123
         }
     }
+
+    Context "Resolve-DataFolderPath" {
+        It "expands Windows-style environment variables in a path" {
+            $env:TEST_DATA_ROOT = "C:\temp\tracker-test"
+            $resolved = Resolve-DataFolderPath "%TEST_DATA_ROOT%\ScreenTime"
+            $resolved | Should Be "C:\temp\tracker-test\ScreenTime"
+        }
+    }
 }
