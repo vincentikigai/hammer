@@ -1,4 +1,4 @@
-# 🕒 Worktime Tracker
+# 🕒 Active Time Tracker
 
 A robust, lightweight utility to automatically monitor user activity and log work sessions with zero manual effort. 
 It features a cross-platform **Go client** that supports syncing multiple devices (Windows, Mac, Linux) into a single unified Markdown report via Cloud Sync.
@@ -21,31 +21,67 @@ It features a cross-platform **Go client** that supports syncing multiple device
 - **macOS**: Works out of the box.
 - **Linux**: Requires `xprintidle` installed (e.g. `sudo apt-get install xprintidle`).
 
-## 🛠 Quick Start (Cross-Platform Go Client)
+## 🌍 Cross-Compiling (Build for any OS)
+Because Go supports cross-compilation natively, you can build the executable for Mac, Linux, or Windows from any machine without needing to install Go on the target devices.
 
-**To run locally or build from source:**
-1.  Navigate to the Go client folder: `cd tracker-client`
-2.  Run the tracker: `go run .` (or `.\active-time-tracker.exe`)
-3.  Check your results in `~/ActiveTime` (or your `$ACTIVE_TIME_FOLDER`).
+**The easiest way — run the included build script from the project root:**
+```powershell
+.\build_all.ps1
+```
+This automatically compiles all 4 platform binaries and places them directly into your `%ONEDRIVE%\toolkit\` folder, ready to distribute to any device.
 
-**To cross-compile for Mac/Linux from Windows:**
-You can build the executable for your Mac or Linux machine without installing Go on those devices.
+**Or build manually:**
 ```powershell
 cd tracker-client
 
+# For Windows (with console window — useful for debugging):
+$env:GOOS="windows"; $env:GOARCH="amd64"
+go build -o active-time-tracker-console.exe .
+
+# For Windows (silent, no console window — use for startup/background running):
+$env:GOOS="windows"; $env:GOARCH="amd64"
+go build -ldflags -H=windowsgui -o active-time-tracker.exe .
+
 # For macOS (Intel):
 $env:GOOS="darwin"; $env:GOARCH="amd64"
-go build -o active-time-tracker-mac .
+go build -o active-time-tracker-mac-intel .
 
 # For macOS (Apple Silicon M1/M2/M3):
 $env:GOOS="darwin"; $env:GOARCH="arm64"
-go build -o active-time-tracker-mac .
+go build -o active-time-tracker-mac-arm64 .
 
 # For Linux:
 $env:GOOS="linux"; $env:GOARCH="amd64"
 go build -o active-time-tracker-linux .
 ```
-Transfer the resulting binary to your Mac or Linux machine (e.g., via OneDrive, USB, or `scp`), then follow the steps below.
+
+## 🪟 Running on Windows
+
+**Step 1: Navigate to the Go client folder:**
+```powershell
+cd tracker-client
+```
+
+**Step 2 (Optional): Configure the shared data folder** (required for multi-device sync). Set the env variable to point to your OneDrive/Dropbox folder:
+```powershell
+$env:ACTIVE_TIME_FOLDER="$env:USERPROFILE\OneDrive\ActiveTime"
+```
+
+**Step 3: Run the tracker:**
+```powershell
+go run . 
+# Or build it first: go build -o active-time-tracker.exe . && .\active-time-tracker.exe
+```
+
+**Step 4 (Optional): Run at login automatically (Silently)**
+1. Build the executable so it runs completely hidden in the background without a console window:
+   ```powershell
+   go build -ldflags -H=windowsgui -o active-time-tracker.exe .
+   ```
+2. Press `Win + R`, type `shell:startup`, and press Enter.
+3. In the folder that opens, Right-Click -> New -> Shortcut. Point the shortcut to your compiled `active-time-tracker.exe`.
+
+*(Note: If you are using a custom `ACTIVE_TIME_FOLDER`, you must set it permanently in your Windows **System Environment Variables** (search "Environment Variables" in the Start menu) so the background process can see it on boot).*
 
 ## 🍎 Running on macOS
 

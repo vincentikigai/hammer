@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ import (
 // aggregates all sessions by date, sorts them chronologically, and writes
 // a unified markdown report for each date.
 func GenerateUnifiedReports(dataFolder string) error {
-	files, err := filepath.Glob(filepath.Join(dataFolder, "*_session_log.json"))
+	files, err := filepath.Glob(filepath.Join(dataFolder, "*session_log.json"))
 	if err != nil {
 		return err
 	}
@@ -59,7 +60,15 @@ func generateDailyReport(dataFolder, date string, sessions []Session) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("# Work Time Report - %s\n\n", date))
+	folderName := filepath.Base(dataFolder)
+	if folderName == "." || folderName == "\\" || folderName == "/" {
+		folderName = "Work Time"
+	} else {
+		// Insert spaces into CamelCase (e.g. ScreenTime -> Screen Time)
+		re := regexp.MustCompile(`([a-z])([A-Z])`)
+		folderName = re.ReplaceAllString(folderName, "${1} ${2}")
+	}
+	sb.WriteString(fmt.Sprintf("# %s Report - %s\n\n", folderName, date))
 	sb.WriteString(fmt.Sprintf("- **Total Duration**: %s\n", FormatDuration(totalSeconds)))
 	sb.WriteString(fmt.Sprintf("- **Total Sessions**: %d\n\n", len(sessions)))
 	sb.WriteString("## Session Details\n\n")
