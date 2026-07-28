@@ -118,15 +118,15 @@ cat > ~/Library/LaunchAgents/com.worktime.tracker.plist << 'EOF'
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.worktime.tracker</string>
+    <string>simway.worktime.tracker</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/YOUR_USERNAME/Downloads/active-time-tracker-mac</string>
+        <string>$HOME/OneDrive/active-time-tracker-mac-intel</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
         <key>ACTIVE_TIME_FOLDER</key>
-        <string>/Users/YOUR_USERNAME/Library/CloudStorage/OneDrive-Personal/ActiveTime</string>
+        <string>$HOME/OneDrive/ActiveTime</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
@@ -140,7 +140,7 @@ cat > ~/Library/LaunchAgents/com.worktime.tracker.plist << 'EOF'
 </plist>
 EOF
 # Replace YOUR_USERNAME with your actual macOS username, then load it:
-launchctl load ~/Library/LaunchAgents/com.worktime.tracker.plist
+launchctl load ~/Library/LaunchAgents/simway.worktime.tracker.plist
 ```
 
 ## 🐧 Running on Linux
