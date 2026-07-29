@@ -46,11 +46,11 @@ func NewTracker(config TrackerConfig) *Tracker {
 }
 
 func (t *Tracker) getSessionLogFile() string {
-	return filepath.Join(t.config.DataFolder, fmt.Sprintf("%s_session_log.json", t.config.Hostname))
+	return filepath.Join(t.config.DataFolder, fmt.Sprintf("session_log_%s.json", t.config.Hostname))
 }
 
 func (t *Tracker) getActiveStateFile() string {
-	return filepath.Join(t.config.DataFolder, fmt.Sprintf("%s_active_state.json", t.config.Hostname))
+	return filepath.Join(t.config.DataFolder, fmt.Sprintf("active_state_%s.json", t.config.Hostname))
 }
 
 func (t *Tracker) loadData() {
@@ -86,7 +86,7 @@ func (t *Tracker) saveActiveState() {
 }
 
 func (t *Tracker) getCsvFile() string {
-	return filepath.Join(t.config.DataFolder, fmt.Sprintf("%s_history.csv", t.config.Hostname))
+	return filepath.Join(t.config.DataFolder, fmt.Sprintf("session_history_%s.csv", t.config.Hostname))
 }
 
 func (t *Tracker) saveSessions() {
@@ -130,7 +130,7 @@ func (t *Tracker) handleRecovery() {
 
 	rec := t.data.ActiveSession
 	lastHbStr := fmt.Sprintf("%s %s", rec.Date, rec.LastHeartbeatTime)
-	lastHbTime, err := time.Parse("2006-01-02 15:04:05", lastHbStr)
+	lastHbTime, err := time.ParseInLocation("2006-01-02 15:04:05", lastHbStr, time.Local)
 	if err != nil {
 		return
 	}
@@ -139,7 +139,12 @@ func (t *Tracker) handleRecovery() {
 	if gapSeconds <= float64(t.config.InactivityThreshold) {
 		fmt.Printf(">>> Brief interruption detected (%.0fs). Seamlessly resuming...\n", gapSeconds)
 		startStr := fmt.Sprintf("%s %s", rec.Date, rec.StartTime)
-		t.sessionStart, _ = time.Parse("2006-01-02 15:04:05", startStr)
+		var errParse error
+		t.sessionStart, errParse = time.ParseInLocation("2006-01-02 15:04:05", startStr, time.Local)
+		if errParse != nil || t.sessionStart.IsZero() {
+			fmt.Printf("Warning: Could not parse StartTime from active state (%v). Resetting to now.\n", errParse)
+			t.sessionStart = time.Now()
+		}
 		t.isWorking = true
 	} else {
 		fmt.Println(">>> Long gap detected. Finalizing unended session...")

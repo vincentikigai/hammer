@@ -31,7 +31,7 @@ function Format-Duration {
 $DataFolder = Resolve-DataFolderPath $DataFolder
 
 # --- Load sessions from ALL *session_log.json files (Go client + legacy) ---
-$sessionLogFiles = Get-ChildItem -Path $DataFolder -Filter "*session_log.json" -ErrorAction SilentlyContinue
+$sessionLogFiles = Get-ChildItem -Path $DataFolder -Filter "session_log*.json" -ErrorAction SilentlyContinue
 
 if ($sessionLogFiles.Count -eq 0) {
     Write-Host "x No session_log.json files found in $DataFolder" -ForegroundColor Red

@@ -15,7 +15,7 @@ import (
 // aggregates all sessions by date, sorts them chronologically, and writes
 // a unified markdown report for each date.
 func GenerateUnifiedReports(dataFolder string) error {
-	files, err := filepath.Glob(filepath.Join(dataFolder, "*session_log.json"))
+	files, err := filepath.Glob(filepath.Join(dataFolder, "session_log*.json"))
 	if err != nil {
 		return err
 	}
@@ -49,6 +49,68 @@ func GenerateUnifiedReports(dataFolder string) error {
 		})
 
 		generateDailyReport(dataFolder, date, sessions)
+	}
+	return nil
+}
+
+// GenerateReportsForDates regenerates reports only for the specified dates.
+// If dates is empty, it falls back to regenerating all dates found in the logs.
+func GenerateReportsForDates(dataFolder string, dates []string) error {
+	files, err := filepath.Glob(filepath.Join(dataFolder, "session_log*.json"))
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("no session_log.json files found in %s", dataFolder)
+	}
+
+	fmt.Printf("Found %d session log file(s):\n", len(files))
+	var allSessions []Session
+	for _, file := range files {
+		fmt.Printf("  -> %s\n", filepath.Base(file))
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var wrapper struct {
+			Sessions []Session `json:"sessions"`
+		}
+		if err := json.Unmarshal(data, &wrapper); err == nil {
+			allSessions = append(allSessions, wrapper.Sessions...)
+		}
+	}
+	fmt.Printf("Total sessions loaded: %d\n\n", len(allSessions))
+
+	// Group all sessions by date
+	sessionsByDate := make(map[string][]Session)
+	for _, s := range allSessions {
+		sessionsByDate[s.Date] = append(sessionsByDate[s.Date], s)
+	}
+
+	// Filter to requested dates, or all dates if none specified
+	targetDates := dates
+	if len(targetDates) == 0 {
+		for d := range sessionsByDate {
+			targetDates = append(targetDates, d)
+		}
+		sort.Strings(targetDates)
+	}
+
+	for _, date := range targetDates {
+		sessions, ok := sessionsByDate[date]
+		if !ok || len(sessions) == 0 {
+			fmt.Printf("! No sessions found for %s\n", date)
+			continue
+		}
+		sort.Slice(sessions, func(i, j int) bool {
+			return sessions[i].Start < sessions[j].Start
+		})
+		generateDailyReport(dataFolder, date, sessions)
+		total := 0
+		for _, s := range sessions {
+			total += s.Duration
+		}
+		fmt.Printf("+ Regenerated %s — %d session(s), total %s\n", date, len(sessions), FormatDuration(total))
 	}
 	return nil
 }
