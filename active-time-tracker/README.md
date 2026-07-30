@@ -112,7 +112,7 @@ export ACTIVE_TIME_FOLDER="$HOME/Library/CloudStorage/OneDrive-Personal/ActiveTi
 **Step 5 (Optional): Run at login automatically.** Create a launch agent so it starts on every boot:
 ```bash
 mkdir -p ~/Library/LaunchAgents
-cat > ~/Library/LaunchAgents/com.worktime.tracker.plist << 'EOF'
+cat > ~/Library/LaunchAgents/simway.worktime.tracker.plist << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
