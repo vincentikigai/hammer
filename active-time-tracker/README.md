@@ -152,9 +152,9 @@ tail -f /tmp/activetime-tracker.log
 ```
 reload plist:
 ```bash
-lanchctl stop simway.activetime.tracker
-lanchctl unload ~/Library/LaunchAgents/simway.activetime.tracker.plist
-lanchctl load ~/Library/LaunchAgents/simway.activetime.tracker.plist
+launchctl stop simway.activetime.tracker
+launchctl unload ~/Library/LaunchAgents/simway.activetime.tracker.plist
+launchctl load ~/Library/LaunchAgents/simway.activetime.tracker.plist
 ```
 
 ## 🐧 Running on Linux
