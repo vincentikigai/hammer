@@ -121,7 +121,7 @@ cat > ~/Library/LaunchAgents/simway.activetime.tracker.plist << 'EOF'
     <string>simway.activetime.tracker</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$HOME/OneDrive/active-time-tracker-mac-intel</string>
+        <string>/User/YOUR_USERNAME/OneDrive/toolkit/active-time-tracker-mac-intel</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
@@ -133,9 +133,9 @@ cat > ~/Library/LaunchAgents/simway.activetime.tracker.plist << 'EOF'
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>~/tmp/activetime-tracker.log</string>
+    <string>/tmp/activetime-tracker.YOUR_USERNAME.log</string>
     <key>StandardErrorPath</key>
-    <string>~/tmp/activetime-tracker.log</string>
+    <string>/tmp/activetime-tracker.YOUR_USERNAME.log</string>
 </dict>
 </plist>
 EOF
