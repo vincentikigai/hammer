@@ -112,13 +112,13 @@ export ACTIVE_TIME_FOLDER="$HOME/Library/CloudStorage/OneDrive-Personal/ActiveTi
 **Step 5 (Optional): Run at login automatically.** Create a launch agent so it starts on every boot:
 ```bash
 mkdir -p ~/Library/LaunchAgents
-cat > ~/Library/LaunchAgents/simway.worktime.tracker.plist << 'EOF'
+cat > ~/Library/LaunchAgents/simway.activetime.tracker.plist << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>simway.worktime.tracker</string>
+    <string>simway.activetime.tracker</string>
     <key>ProgramArguments</key>
     <array>
         <string>$HOME/OneDrive/active-time-tracker-mac-intel</string>
@@ -133,28 +133,28 @@ cat > ~/Library/LaunchAgents/simway.worktime.tracker.plist << 'EOF'
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/worktime-tracker.log</string>
+    <string>~/tmp/activetime-tracker.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/worktime-tracker.log</string>
+    <string>~/tmp/activetime-tracker.log</string>
 </dict>
 </plist>
 EOF
 # Replace YOUR_USERNAME with your actual macOS username, then load it:
-launchctl load ~/Library/LaunchAgents/simway.worktime.tracker.plist
+launchctl load ~/Library/LaunchAgents/simway.activetime.tracker.plist
 ```
 Check if it's loaded:
 ```bash
-launchctl list | grep simway.worktime.tracker
+launchctl list | grep simway.activetime.tracker
 ```
 Check the live log:
 ```bash
-tail -f /tmp/worktime-tracker.log
+tail -f /tmp/activetime-tracker.log
 ```
 reload plist:
 ```bash
-lanchctl stop simway.worktime.tracker
-lanchctl unload ~/Library/LaunchAgents/simway.worktime.tracker.plist
-lanchctl load ~/Library/LaunchAgents/simway.worktime.tracker.plist
+lanchctl stop simway.activetime.tracker
+lanchctl unload ~/Library/LaunchAgents/simway.activetime.tracker.plist
+lanchctl load ~/Library/LaunchAgents/simway.activetime.tracker.plist
 ```
 
 ## 🐧 Running on Linux
@@ -178,9 +178,9 @@ export ACTIVE_TIME_FOLDER="$HOME/OneDrive/ActiveTime"
 **Step 4 (Optional): Run at login automatically** using a systemd user service:
 ```bash
 mkdir -p ~/.config/systemd/user
-cat > ~/.config/systemd/user/worktime-tracker.service << 'EOF'
+cat > ~/.config/systemd/user/activetime-tracker.service << 'EOF'
 [Unit]
-Description=Worktime Tracker
+Description=Activetime Tracker
 
 [Service]
 ExecStart=%h/Downloads/active-time-tracker-linux
@@ -190,7 +190,7 @@ Restart=on-failure
 [Install]
 WantedBy=default.target
 EOF
-systemctl --user enable --now worktime-tracker.service
+systemctl --user enable --now activetime-tracker.service
 ```
 
 ## 🛠 Quick Start (Legacy PowerShell Version — Windows Only)
