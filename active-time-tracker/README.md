@@ -142,6 +142,20 @@ EOF
 # Replace YOUR_USERNAME with your actual macOS username, then load it:
 launchctl load ~/Library/LaunchAgents/simway.worktime.tracker.plist
 ```
+Check if it's loaded:
+```bash
+launchctl list | grep simway.worktime.tracker
+```
+Check the live log:
+```bash
+tail -f /tmp/worktime-tracker.log
+```
+reload plist:
+```bash
+lanchctl stop simway.worktime.tracker
+lanchctl unload ~/Library/LaunchAgents/simway.worktime.tracker.plist
+lanchctl load ~/Library/LaunchAgents/simway.worktime.tracker.plist
+```
 
 ## 🐧 Running on Linux
 
