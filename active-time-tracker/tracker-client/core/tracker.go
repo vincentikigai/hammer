@@ -113,11 +113,11 @@ func (t *Tracker) Start() {
 
 	t.handleRecovery()
 
-	t.lastLoopTime = time.Now()
-	t.lastSaveTime = time.Now()
+	t.lastLoopTime = time.Now().Round(0)
+	t.lastSaveTime = time.Now().Round(0)
 
 	for {
-		now := time.Now()
+		now := time.Now().Round(0) // strip monotonic so all Sub() uses wall-clock
 		t.loopTick(now)
 		time.Sleep(1 * time.Second)
 	}
@@ -143,7 +143,7 @@ func (t *Tracker) handleRecovery() {
 		t.sessionStart, errParse = time.ParseInLocation("2006-01-02 15:04:05", startStr, time.Local)
 		if errParse != nil || t.sessionStart.IsZero() {
 			fmt.Printf("Warning: Could not parse StartTime from active state (%v). Resetting to now.\n", errParse)
-			t.sessionStart = time.Now()
+			t.sessionStart = time.Now().Round(0)
 		}
 		t.isWorking = true
 	} else {
@@ -276,7 +276,7 @@ func (t *Tracker) loopTick(now time.Time) {
 // StopGracefully saves the final state when the application is closing
 func (t *Tracker) StopGracefully() {
 	if t.isWorking && !t.sessionStart.IsZero() {
-		now := time.Now()
+		now := time.Now().Round(0)
 		duration := int(now.Sub(t.sessionStart).Seconds())
 		if duration > 1 {
 			session := Session{
