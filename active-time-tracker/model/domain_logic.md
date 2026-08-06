@@ -39,9 +39,13 @@ flowchart TD
 
     subgraph Termination ["Termination Domain"]
         StateIdle -.->|"Event: Tracker Terminated"| CleanExit["Action: Graceful Exit"]
-        StateWorking -.->|"Event: Tracker Terminated"| GracefulExit["Action: Save current session<br/>& clear activeSession"]
+        StateWorking -.->|"Event: Tracker Terminated"| GracefulExit["Action: Save high-precision heartbeat<br/>& preserve activeSession"]
         GracefulExit --> End(("Tracker End"))
         CleanExit --> End
+    end
+
+    subgraph CrossDevice ["Cross-Device Synchronization Domain"]
+        StateWorking -.->|"Event: Stale Cross-Device Session Detected"| CrossDeviceArchive["Action: Archive remote session into<br/>its specific session log & clean up state"]
     end
 ```
 
@@ -64,3 +68,9 @@ While in the "Working" state, a periodic heartbeat event saves the state to disk
 
 ### 6. Event: System Suspended & Woken
 If the system is suspended (e.g., sleep mode) while working, an event detects the sudden massive jump in time upon waking up. This automatically triggers a retroactive session closure at the last known heartbeat, preventing "sleep hours" from inflating work time.
+
+### 7. Event: Tracker Terminated (Seamless Restart)
+When the tracker is closed (e.g. for an update or OS restart), it does not forcefully finalize the session. Instead, it saves a final high-precision heartbeat. This defers the decision to the next startup's Recovery logic, allowing restarts that take less than `$InactivityThreshold` to seamlessly resume without fragmenting the session.
+
+### 8. Event: Cross-Device Synchronization
+If a user is working on Device A, Device A actively monitors for hanging sessions left behind by other devices (e.g., Device B was put to sleep). If it detects a stale heartbeat from another device, it safely finalizes Device B's session into Device B's session log so that it seamlessly appears in the unified report.

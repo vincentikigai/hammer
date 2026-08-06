@@ -37,15 +37,15 @@ flowchart TD
         
         J --> M
         L --> M
-        M --> Q["Periodic Report Check & Update LastLoopTime:<br/>Every ReportIntervalMinutes,<br/>generate MD report"]
+        M --> Q["Periodic Check (Every ReportIntervalMinutes):<br/>1. Archive stale cross-device sessions<br/>2. Update MD Report"]
         O --> Q
         P --> Q
         Q --> F
     end
 
     Loop -->|"Termination (Ctrl+C)"| R
-    subgraph Termination ["Termination Path"]
-        R["Signal Handler (Ctrl+C):<br/>Save current session<br/>Clear activeSession<br/>Update final report"]
+    subgraph Termination ["Termination Path (Seamless Restart)"]
+        R["Signal Handler (Ctrl+C):<br/>Save high-precision heartbeat<br/>Update final report"]
         R --> S["Script End"]
     end
 ```
@@ -64,8 +64,11 @@ The client uses OS-specific APIs (e.g. `GetLastInputInfo` on Windows, `ioreg` on
 ### 4. Heartbeat System
 To prevent data loss, the client saves its state every 30 seconds while you are working. This "heartbeat" is what enables the recovery system.
 
-### 5. Graceful Exit
-When you terminate the client (e.g., by closing the terminal or pressing `Ctrl+C`), a signal handler captures the interruption and ensures the current session is saved correctly before exiting.
+### 5. Graceful Exit (Seamless Restart)
+When you terminate the client (e.g., by closing the terminal or pressing `Ctrl+C`), it does not forcefully end the session. Instead, it saves a final, precise heartbeat. This defers the decision to the next startup: if you restart the client within `$InactivityThreshold` (e.g., for an update), it seamlessly resumes. If not, it is correctly finalized.
 
 ### 6. Sleep/Suspend Detection
-If the computer is put to sleep while working, the loop measures an unexpectedly large time delta (greater than `$InactivityThreshold`) upon waking up. When this is detected, the client gracefully recovers by closing the session retroactively at the time of the last heartbeat, preventing the sleep duration from being logged as active work time.
+If the computer is put to sleep while working, the loop measures an unexpectedly large time delta (greater than `$InactivityThreshold`) upon waking up. When this is detected, the client gracefully recovers by closing the session retroactively at the time of the last known loop tick before sleep, preventing the sleep duration from being logged as active work time.
+
+### 7. Cross-Device Synchronization
+Periodically (before generating reports), the tracker actively checks for stale `active_state*.json` files left by other devices (e.g. if you put your Mac to sleep and moved to Windows). If found, it safely archives the remote device's hanging session into its respective log, ensuring the unified reports are always perfectly up-to-date.

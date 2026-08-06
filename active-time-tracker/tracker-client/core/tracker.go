@@ -110,6 +110,7 @@ func (t *Tracker) Start() {
 	fmt.Println("Work Time Tracker Started...")
 	fmt.Printf("Data Path: %s\n", t.config.DataFolder)
 	fmt.Printf("Hostname: %s\n", t.config.Hostname)
+	fmt.Printf("Inactivity Threshold: %ds\n", t.config.InactivityThreshold)
 
 	t.handleRecovery()
 
@@ -267,6 +268,7 @@ func (t *Tracker) loopTick(now time.Time) {
 
 	// Periodic report saving
 	if now.Sub(t.lastSaveTime).Minutes() > float64(t.config.ReportIntervalMinutes) {
+		ArchiveStaleSessions(t.config.DataFolder, t.config.Hostname, t.config.InactivityThreshold)
 		GenerateUnifiedReports(t.config.DataFolder)
 		fmt.Printf("[%s] Auto Report updated.\n", now.Format("15:04:05"))
 		t.lastSaveTime = now
@@ -278,23 +280,20 @@ func (t *Tracker) StopGracefully() {
 	if t.isWorking && !t.sessionStart.IsZero() {
 		now := time.Now().Round(0)
 		duration := int(now.Sub(t.sessionStart).Seconds())
-		if duration > 1 {
-			session := Session{
-				Date:        now.Format("2006-01-02"),
-				Start:       t.sessionStart.Format("15:04:05"),
-				End:         now.Format("15:04:05"),
-				Duration:    duration,
-				DurationHms: FormatDuration(duration),
-			}
-			t.data.Sessions = append(t.data.Sessions, session)
-			fmt.Println("\n[SIG] Final session saved.")
+		
+		// Instead of finalizing the session, just record a high-precision heartbeat.
+		// This delegates the decision (seamless resume vs finalize) to handleRecovery on the next startup.
+		t.data.ActiveSession = &ActiveSession{
+			Date:              now.Format("2006-01-02"),
+			StartTime:         t.sessionStart.Format("15:04:05"),
+			LastHeartbeatTime: now.Format("15:04:05"),
+			Duration:          duration,
+			DurationHms:       FormatDuration(duration),
 		}
+		t.saveActiveState()
+		fmt.Println("\n[SIG] Final active state saved. Awaiting next startup for seamless resume check.")
 	}
-	t.data.ActiveSession = nil
-	t.saveSessions()
-	t.saveActiveState()
 	
 	GenerateUnifiedReports(t.config.DataFolder)
-	
 	fmt.Println("[SIG] Tracker stopped.")
 }

@@ -9,7 +9,9 @@ It features a cross-platform **Go client** that supports syncing multiple device
 - **Dual Logging**: Maintains a structured **JSON** log for internal logic and a flat **CSV** export for Excel/Spreadsheet analysis.
 - **Markdown Reports**: Generates professional daily summaries (`.md`) with session tables and break tracking for all your devices merged together.
 - **Safety & Persistence**: 30-second heartbeats and auto-recovery ensure data isn't lost during power outages.
-- **Midnight Splitting**: Automatically splits sessions at 12:00 AM for 100% accurate daily totals.
+- **Seamless Restarts**: Safe to close the tracker for updates or OS reboots—if restarted within 3 minutes, your session resumes seamlessly.
+- **Cross-Device Sync Engine**: Automatically detects and archives hanging sessions left behind by sleeping devices (e.g. Mac to Windows), ensuring reports are always 100% up-to-date.
+- **Midnight Splitting**: Automatically splits sessions at 12:00 AM for accurate daily totals.
 
 ## 📂 Project Structure
 - `tracker-client/`: The modern cross-platform Go tracking engine (Recommended).
