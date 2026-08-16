@@ -268,7 +268,6 @@ func (t *Tracker) loopTick(now time.Time) {
 
 	// Periodic report saving
 	if now.Sub(t.lastSaveTime).Minutes() > float64(t.config.ReportIntervalMinutes) {
-		ArchiveStaleSessions(t.config.DataFolder, t.config.Hostname, t.config.InactivityThreshold)
 		GenerateUnifiedReports(t.config.DataFolder)
 		fmt.Printf("[%s] Auto Report updated.\n", now.Format("15:04:05"))
 		t.lastSaveTime = now

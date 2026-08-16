@@ -37,7 +37,7 @@ flowchart TD
         
         J --> M
         L --> M
-        M --> Q["Periodic Check (Every ReportIntervalMinutes):<br/>1. Archive stale cross-device sessions<br/>2. Update MD Report"]
+        M --> Q["Periodic Check (Every ReportIntervalMinutes):<br/>Read-only evaluation of remote active_state files & MD Report Generation"]
         O --> Q
         P --> Q
         Q --> F
@@ -70,5 +70,5 @@ When you terminate the client (e.g., by closing the terminal or pressing `Ctrl+C
 ### 6. Sleep/Suspend Detection
 If the computer is put to sleep while working, the loop measures an unexpectedly large time delta (greater than `$InactivityThreshold`) upon waking up. When this is detected, the client gracefully recovers by closing the session retroactively at the time of the last known loop tick before sleep, preventing the sleep duration from being logged as active work time.
 
-### 7. Cross-Device Synchronization
-Periodically (before generating reports), the tracker actively checks for stale `active_state*.json` files left by other devices (e.g. if you put your Mac to sleep and moved to Windows). If found, it safely archives the remote device's hanging session into its respective log, ensuring the unified reports are always perfectly up-to-date.
+### 7. Read-Only Cross-Device Projection (Single-Writer Architecture)
+To eliminate OneDrive sync conflicts, each device strictly writes only to its own log and state files. When generating unified reports, the reporting engine performs a read-only evaluation of all `active_state*.json` files. If another device's active session is stale (older than `$InactivityThreshold`), it is dynamically projected into the report in-memory without modifying any remote disk files.

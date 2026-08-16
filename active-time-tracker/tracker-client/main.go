@@ -76,7 +76,6 @@ func main() {
 		}
 
 		fmt.Printf("Data folder: %s\n\n", dataFolder)
-		core.ArchiveStaleSessions(dataFolder, "", 180) // Passing empty hostname means it will archive ALL stale sessions
 		if err := core.GenerateReportsForDates(dataFolder, dates); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)

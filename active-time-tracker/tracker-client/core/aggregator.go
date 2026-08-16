@@ -11,7 +11,54 @@ import (
 	"time"
 )
 
-// GenerateUnifiedReports reads all *_session_log.json files in the data folder,
+// loadStaleActiveSessions evaluates all active_state_*.json files in dataFolder.
+// If an active session's last heartbeat is older than 180 seconds, it projects
+// that active session as a finalized Session in memory (without touching any disk files).
+func loadStaleActiveSessions(dataFolder string) []Session {
+	files, err := filepath.Glob(filepath.Join(dataFolder, "active_state_*.json"))
+	if err != nil || len(files) == 0 {
+		return nil
+	}
+
+	now := time.Now().Round(0)
+	var projected []Session
+
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+
+		var wrapper struct {
+			ActiveSession *ActiveSession `json:"activeSession"`
+		}
+		if err := json.Unmarshal(data, &wrapper); err != nil || wrapper.ActiveSession == nil {
+			continue
+		}
+
+		rec := wrapper.ActiveSession
+		lastHbStr := fmt.Sprintf("%s %s", rec.Date, rec.LastHeartbeatTime)
+		lastHbTime, errParse := time.ParseInLocation("2006-01-02 15:04:05", lastHbStr, time.Local)
+		if errParse != nil {
+			continue
+		}
+
+		gapSeconds := now.Sub(lastHbTime).Seconds()
+		if gapSeconds > 180 {
+			session := Session{
+				Date:        rec.Date,
+				Start:       rec.StartTime,
+				End:         rec.LastHeartbeatTime,
+				Duration:    rec.Duration,
+				DurationHms: rec.DurationHms,
+			}
+			projected = append(projected, session)
+		}
+	}
+	return projected
+}
+
+// GenerateUnifiedReports reads all session_log*.json files in the data folder,
 // aggregates all sessions by date, sorts them chronologically, and writes
 // a unified markdown report for each date.
 func GenerateUnifiedReports(dataFolder string) error {
@@ -20,7 +67,7 @@ func GenerateUnifiedReports(dataFolder string) error {
 		return err
 	}
 
-	// Read all sessions from all devices
+	// Read all sessions from device logs
 	var allSessions []Session
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -34,6 +81,9 @@ func GenerateUnifiedReports(dataFolder string) error {
 			allSessions = append(allSessions, wrapper.Sessions...)
 		}
 	}
+
+	// Read-only projection of any stale active sessions from other devices
+	allSessions = append(allSessions, loadStaleActiveSessions(dataFolder)...)
 
 	// Group by date
 	sessionsByDate := make(map[string][]Session)
@@ -61,7 +111,7 @@ func GenerateReportsForDates(dataFolder string, dates []string) error {
 		return err
 	}
 	if len(files) == 0 {
-		return fmt.Errorf("no session_log.json files found in %s", dataFolder)
+		return fmt.Errorf("no session_log*.json files found in %s", dataFolder)
 	}
 
 	fmt.Printf("Found %d session log file(s):\n", len(files))
@@ -79,7 +129,12 @@ func GenerateReportsForDates(dataFolder string, dates []string) error {
 			allSessions = append(allSessions, wrapper.Sessions...)
 		}
 	}
-	fmt.Printf("Total sessions loaded: %d\n\n", len(allSessions))
+	fmt.Printf("Total sessions loaded: %d\n", len(allSessions))
+	staleProjections := loadStaleActiveSessions(dataFolder)
+	if len(staleProjections) > 0 {
+		fmt.Printf("Loaded %d in-memory projection(s) for stale active sessions.\n", len(staleProjections))
+		allSessions = append(allSessions, staleProjections...)
+	}
 
 	// Group all sessions by date
 	sessionsByDate := make(map[string][]Session)
