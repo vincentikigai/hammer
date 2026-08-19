@@ -149,14 +149,16 @@ func (t *Tracker) handleRecovery() {
 		t.isWorking = true
 	} else {
 		fmt.Println(">>> Long gap detected. Finalizing unended session...")
-		session := Session{
-			Date:        rec.Date,
-			Start:       rec.StartTime,
-			End:         rec.LastHeartbeatTime,
-			Duration:    rec.Duration,
-			DurationHms: rec.DurationHms,
+		if rec.Duration >= 60 {
+			session := Session{
+				Date:        rec.Date,
+				Start:       rec.StartTime,
+				End:         rec.LastHeartbeatTime,
+				Duration:    rec.Duration,
+				DurationHms: rec.DurationHms,
+			}
+			t.data.Sessions = append(t.data.Sessions, session)
 		}
-		t.data.Sessions = append(t.data.Sessions, session)
 		t.data.ActiveSession = nil
 		t.saveSessions()
 		t.saveActiveState()
@@ -171,32 +173,36 @@ func (t *Tracker) loopTick(now time.Time) {
 	if loopGap > float64(t.config.InactivityThreshold) {
 		if t.isWorking {
 			sessionEnd := t.lastLoopTime
-			duration := sessionEnd.Sub(t.sessionStart).Seconds()
-			if duration > 1 {
+			duration := int(sessionEnd.Sub(t.sessionStart).Seconds())
+			if duration >= 60 {
 				endDate := t.sessionStart.Format("2006-01-02")
 				session := Session{
 					Date:        endDate,
 					Start:       t.sessionStart.Format("15:04:05"),
 					End:         sessionEnd.Format("15:04:05"),
-					Duration:    int(duration),
-					DurationHms: FormatDuration(int(duration)),
+					Duration:    duration,
+					DurationHms: FormatDuration(duration),
 				}
 				t.data.Sessions = append(t.data.Sessions, session)
-				fmt.Printf("[%s] Sleep detected! Session ended retroactively at %s (%s)\n", now.Format("15:04:05"), sessionEnd.Format("15:04:05"), session.DurationHms)
+				fmt.Printf("[%s] Sleep detected — Session ended at %s (Duration: %s)\n", now.Format("15:04:05"), session.End, session.DurationHms)
 			}
 			t.isWorking = false
 			t.data.ActiveSession = nil
 			t.saveSessions()
 			t.saveActiveState()
 		}
+		t.lastLoopTime = now
+		return
 	}
 	t.lastLoopTime = now
 
+	// 2. Idle Detection
 	idleDuration, err := idle.GetIdleTime()
 	if err != nil {
-		fmt.Println("Idle detection error:", err)
+		fmt.Printf("Error getting idle time: %v\n", err)
 		return
 	}
+
 	idleSeconds := idleDuration.Seconds()
 
 	if idleSeconds < float64(t.config.InactivityThreshold) {
@@ -212,16 +218,18 @@ func (t *Tracker) loopTick(now time.Time) {
 			oldDate := t.sessionStart.Format("2006-01-02")
 			y, m, d := t.sessionStart.Date()
 			sessionEnd := time.Date(y, m, d, 23, 59, 59, 0, t.sessionStart.Location())
-			duration := sessionEnd.Sub(t.sessionStart).Seconds()
+			duration := int(sessionEnd.Sub(t.sessionStart).Seconds())
 
-			session := Session{
-				Date:        oldDate,
-				Start:       t.sessionStart.Format("15:04:05"),
-				End:         "23:59:59",
-				Duration:    int(duration),
-				DurationHms: FormatDuration(int(duration)),
+			if duration >= 60 {
+				session := Session{
+					Date:        oldDate,
+					Start:       t.sessionStart.Format("15:04:05"),
+					End:         "23:59:59",
+					Duration:    duration,
+					DurationHms: FormatDuration(duration),
+				}
+				t.data.Sessions = append(t.data.Sessions, session)
 			}
-			t.data.Sessions = append(t.data.Sessions, session)
 			
 			// Start new day session
 			y, m, d = now.Date()
@@ -249,7 +257,7 @@ func (t *Tracker) loopTick(now time.Time) {
 			t.isWorking = false
 			sessionEnd := now.Add(-time.Duration(t.config.InactivityThreshold) * time.Second)
 			duration := int(sessionEnd.Sub(t.sessionStart).Seconds())
-			if duration > 1 {
+			if duration >= 60 {
 				session := Session{
 					Date:        today,
 					Start:       t.sessionStart.Format("15:04:05"),
@@ -259,10 +267,10 @@ func (t *Tracker) loopTick(now time.Time) {
 				}
 				t.data.Sessions = append(t.data.Sessions, session)
 				fmt.Printf("[%s] Session End - Duration: %s\n", now.Format("15:04:05"), session.DurationHms)
-				t.data.ActiveSession = nil
-				t.saveSessions()
-				t.saveActiveState()
 			}
+			t.data.ActiveSession = nil
+			t.saveSessions()
+			t.saveActiveState()
 		}
 	}
 

@@ -44,7 +44,7 @@ func loadStaleActiveSessions(dataFolder string) []Session {
 		}
 
 		gapSeconds := now.Sub(lastHbTime).Seconds()
-		if gapSeconds > 180 {
+		if gapSeconds > 180 && rec.Duration >= 60 {
 			session := Session{
 				Date:        rec.Date,
 				Start:       rec.StartTime,
