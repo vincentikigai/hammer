@@ -43,3 +43,10 @@ Continuously monitors internet speed at configurable intervals with color-coded 
 A Python-based internet speed testing tool designed for scheduled, unattended runs on a Raspberry Pi. Logs all results to a CSV file.
 
 **Highlights:** Ping / download / upload logging · Auto-retry if below speed threshold · Logs every attempt · Scheduled via `cron`
+
+---
+
+### 💬 [telegram-backup](./telegram-backup/)
+Backs up Telegram chat messages to resumable JSONL archives, with optional media downloads.
+
+**Highlights:** Complete or selected chats · Resumable exports · Optional media · Python + Telethon

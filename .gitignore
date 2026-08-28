@@ -1,2 +1,4 @@
 ip_log.csv
 /logs/
+/telegram-backup/.venv/
+/telegram-backup/telegram-backups/
