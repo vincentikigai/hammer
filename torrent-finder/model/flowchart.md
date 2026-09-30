@@ -2,7 +2,7 @@
 
 ```mermaid
 flowchart TD
-    Start([Run torrent_finder.py]) --> ParseArgs["Parse CLI Args<br/>- query / --imdb / --type<br/>- music source / TV filters<br/>- shared filters and output limit"]
+    Start([Run torrent_finder.py]) --> ParseArgs["Parse CLI Args<br/>- query / --imdb / --type / --indexer<br/>- music source / TV filters<br/>- shared filters and output limit"]
 
     ParseArgs --> IsMusic{--type music?}
     IsMusic -->|Yes| MusicSource{--music-source?}
@@ -38,6 +38,12 @@ flowchart TD
     ImdbLookup --> Combine
     YTSWarn --> Combine["Combine YTS + EZTV<br/>results"]
 
+    ParseArgs --> IndexerChoice{--indexer selects<br/>Prowlarr or Jackett?}
+    IndexerChoice -->|prowlarr / all| Prowlarr["Prowlarr: query configured<br/>Torznab feed"]
+    IndexerChoice -->|jackett / all| Jackett["Jackett: query configured<br/>Torznab feed"]
+    Prowlarr --> Combine
+    Jackett --> Combine
+
     Combine --> FilterSeeds["Filter: seeds >= --min-seeds"]
     FilterSeeds --> FilterQuality{--quality != all?}
     FilterQuality -->|Yes| KeepQuality["Keep only matching<br/>resolution"]
@@ -57,10 +63,11 @@ flowchart TD
 
 ## Process Flow
 
-1. **Argument parsing** — read the query/IMDb ID, media type, music provider, TV filters, and shared result options.
+1. **Argument parsing** — read the query/IMDb ID, media type, indexer backend, music provider, TV filters, and shared result options.
 2. **YTS search (movies)** — query term is sent directly to the YTS API; tries `yts.mx`, then falls back to `yts.am`/`yts.lt` mirrors if the primary domain is unreachable.
 3. **EZTV search (TV shows)** — an exact TV title is first resolved to an IMDb ID and EZTV returns all indexed torrents for that show, paged to completion. If no exact title match is available, the tool falls back to scanning recent torrents (up to 5 pages of 100).
 4. **Music search** — `--type music` queries Internet Archive and, when configured, Jamendo. Results provide download URLs rather than torrent magnets.
-5. **Combine results** from whichever movie/TV sources were selected via `--type`.
-6. **Filter** movie/TV results by minimum seeders, resolution, season, episode(s), release type, codec, and source as requested.
-7. **Sort and print** the top `--limit` movie/TV results as a table with magnet links.
+5. **Optional Torznab search** — `--indexer prowlarr`, `--indexer jackett`, or `--indexer all` queries the selected configured local service and normalizes its RSS/XML result fields.
+6. **Combine results** from whichever movie/TV sources were selected via `--type` and `--indexer`.
+7. **Filter** movie/TV results by minimum seeders, resolution, season, episode(s), release type, codec, and source as requested.
+8. **Sort and print** the top `--limit` movie/TV results as a table with magnet links.

@@ -6,6 +6,8 @@ A lightweight, OS-independent CLI to search and filter high quality torrents acr
 - **EZTV** (`eztv.re`) for TV shows
 - **Internet Archive** (`archive.org`) for public-domain and Creative Commons music
 - **Jamendo** for Creative Commons music when configured with an API client ID
+- **Prowlarr** for configured, self-hosted Torznab indexers
+- **Jackett** for configured, self-hosted Torznab indexers
 
 No external dependencies — uses only the Python standard library.
 
@@ -65,12 +67,39 @@ python torrent_finder.py "electronic" --type music --music-source jamendo --limi
 `--type all` is the default and searches movies and TV shows. TV-only filters have no effect on movie
 results.
 
+### Optional Indexers
+
+Prowlarr and Jackett are optional local services. They are queried only when selected with
+`--indexer`; no credentials are stored in this project. Configure them through environment variables:
+
+```powershell
+# Copy Prowlarr's Torznab feed URL and API key from its settings.
+$env:PROWLARR_TORZNAB_URL = "http://localhost:9696/your-torznab-feed"
+$env:PROWLARR_API_KEY = "your-prowlarr-api-key"
+
+# Jackett uses its local service URL and API key.
+$env:JACKETT_URL = "http://127.0.0.1:9117"
+$env:JACKETT_API_KEY = "your-jackett-api-key"
+```
+
+```powershell
+# Search only configured Prowlarr indexers
+python torrent_finder.py "Sintel" --type movie --indexer prowlarr --min-seeds 0
+
+# Search native APIs plus every configured Prowlarr and Jackett indexer
+python torrent_finder.py "Numberblocks" --type tv --indexer all --season 4 --min-seeds 0
+```
+
+Use only indexers and content you are authorized to access. `--indexer native` is the default and
+continues to use YTS/EZTV without either local service.
+
 ### Options
 
 | Flag | Description | Default |
 |---|---|---|
 | `--type {movie,tv,music,all}` | Search movies, TV, music, or movies and TV | `all` |
 | `--music-source {archive,jamendo,all}` | Music catalog to query; Jamendo requires `JAMENDO_CLIENT_ID` | `all` |
+| `--indexer {native,prowlarr,jackett,all}` | Torrent backend; Prowlarr/Jackett require local configuration | `native` |
 | `--min-seeds N` | Minimum seeder count to include a result | `5` |
 | `--quality {2160p,1080p,720p,480p,all}` | Filter by resolution | `all` |
 | `--imdb ID` | Look up a TV show directly by IMDb ID | — |

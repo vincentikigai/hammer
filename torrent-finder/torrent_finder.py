@@ -8,12 +8,14 @@ import sys
 import urllib.parse
 import urllib.request
 import json
+import xml.etree.ElementTree as ElementTree
 
 YTS_HOSTS = ["yts.mx", "yts.am", "yts.lt"]
 EZTV_API = "https://eztv.re/api/get-torrents"
 IMDB_SUGGESTION_URL = "https://v3.sg.media-imdb.com/suggestion/x"
 INTERNET_ARCHIVE_SEARCH_API = "https://archive.org/advancedsearch.php"
 JAMENDO_TRACKS_API = "https://api.jamendo.com/v3.0/tracks/"
+TORZNAB_NAMESPACE = "http://torznab.com/schemas/2015/feed"
 
 QUALITY_RANK = {"2160p": 4, "1080p": 3, "720p": 2, "480p": 1, "SD": 0}
 
@@ -133,6 +135,88 @@ def format_size(num_bytes):
             return f"{size:.2f} {unit}"
         size /= 1024
     return f"{size:.2f} PB"
+
+
+def torznab_search_kind(media_type):
+    if media_type == "movie":
+        return "movie"
+    if media_type == "tv":
+        return "tvsearch"
+    return "search"
+
+
+def torznab_result(item, provider):
+    attributes = {
+        attr.get("name"): attr.get("value")
+        for attr in item.findall(f"{{{TORZNAB_NAMESPACE}}}attr")
+    }
+    title = item.findtext("title", "Unknown")
+    link = attributes.get("magneturl") or item.findtext("link", "")
+    season, episode = extract_season_episode(title)
+    if attributes.get("season", "").isdigit():
+        season = int(attributes["season"])
+    if attributes.get("episode", "").isdigit():
+        episode = int(attributes["episode"])
+    return {
+        "source": provider,
+        "title": title,
+        "quality": extract_quality(title),
+        "codec": extract_codec(title),
+        "media_source": extract_source(title),
+        "season": season,
+        "episode": episode,
+        "seeds": int(attributes.get("seeders", 0) or 0),
+        "peers": int(attributes.get("peers", 0) or 0),
+        "size": format_size(int(attributes.get("size", 0) or 0)),
+        "magnet": link,
+        "link_label": "MAGNET" if link.startswith("magnet:") else "DOWNLOAD",
+    }
+
+
+def search_torznab(endpoint, api_key, provider, query, media_type, limit, season=None, episode=None, imdb_id=None):
+    if not endpoint or not api_key:
+        print(f"Warning: {provider} skipped; configure its URL and API key", file=sys.stderr)
+        return []
+
+    params = {
+        "apikey": api_key,
+        "t": torznab_search_kind(media_type),
+        "q": query or "",
+        "limit": min(limit, 100),
+    }
+    if media_type == "tv":
+        if imdb_id:
+            params["imdbid"] = imdb_id if imdb_id.startswith("tt") else f"tt{imdb_id}"
+        if season is not None:
+            params["season"] = season
+        if episode is not None:
+            params["ep"] = episode
+
+    try:
+        query_string = urllib.parse.urlencode(params)
+        separator = "&" if "?" in endpoint else "?"
+        request = urllib.request.Request(f"{endpoint}{separator}{query_string}",
+                                         headers={"User-Agent": "torrent-finder/1.0"})
+        with urllib.request.urlopen(request, timeout=25) as response:
+            root = ElementTree.fromstring(response.read())
+    except Exception as exc:
+        print(f"Warning: {provider} search failed ({exc})", file=sys.stderr)
+        return []
+
+    return [torznab_result(item, provider) for item in root.findall("./channel/item")]
+
+
+def search_prowlarr(query, media_type, limit, season=None, episode=None, imdb_id=None):
+    endpoint = os.getenv("PROWLARR_TORZNAB_URL")
+    api_key = os.getenv("PROWLARR_API_KEY")
+    return search_torznab(endpoint, api_key, "PROWLARR", query, media_type, limit, season, episode, imdb_id)
+
+
+def search_jackett(query, media_type, limit, season=None, episode=None, imdb_id=None):
+    base_url = os.getenv("JACKETT_URL", "").rstrip("/")
+    endpoint = f"{base_url}/api/v2.0/indexers/all/results/torznab/api" if base_url else ""
+    api_key = os.getenv("JACKETT_API_KEY")
+    return search_torznab(endpoint, api_key, "JACKETT", query, media_type, limit, season, episode, imdb_id)
 
 
 def search_internet_archive_music(query, limit):
@@ -375,7 +459,7 @@ def print_results(results, limit):
     for r in results[:limit]:
         print(f'{r["source"]:<5} {r["quality"]:<8} {r["seeds"]:<7} {r["peers"]:<7} {str(r["size"]):<10} {r["title"]}')
         if r["magnet"]:
-            label = "MAGNET" if r.get("is_torrent", True) else "DOWNLOAD"
+            label = r.get("link_label", "MAGNET" if r.get("is_torrent", True) else "DOWNLOAD")
             print(f'      {label}: {r["magnet"]}')
 
 
@@ -391,6 +475,8 @@ def main():
                         help="Media type to search")
     parser.add_argument("--music-source", choices=["archive", "jamendo", "all"], default="all",
                         help="Music catalog to search (default: all configured sources)")
+    parser.add_argument("--indexer", choices=["native", "prowlarr", "jackett", "all"], default="native",
+                        help="Torrent search backend (default: native APIs)")
     parser.add_argument("--min-seeds", type=int, default=5, help="Minimum seeder count (default: 5)")
     parser.add_argument("--quality", choices=["2160p", "1080p", "720p", "480p", "all"], default="all",
                          help="Filter by resolution (default: all)")
@@ -417,11 +503,16 @@ def main():
 
     results = []
     if args.imdb:
-        results.extend(search_eztv_by_imdb(args.imdb, args.limit * 2))
+        if args.indexer in ("native", "all"):
+            results.extend(search_eztv_by_imdb(args.imdb, args.limit * 2))
+        if args.indexer in ("prowlarr", "all"):
+            results.extend(search_prowlarr(None, "tv", args.limit * 2, args.season, args.episode, args.imdb))
+        if args.indexer in ("jackett", "all"):
+            results.extend(search_jackett(None, "tv", args.limit * 2, args.season, args.episode, args.imdb))
     else:
-        if args.type in ("movie", "all"):
+        if args.indexer in ("native", "all") and args.type in ("movie", "all"):
             results.extend(search_yts(args.query, args.limit * 2))
-        if args.type in ("tv", "all"):
+        if args.indexer in ("native", "all") and args.type in ("tv", "all"):
             imdb_id = resolve_tv_imdb_id(args.query)
             if imdb_id:
                 results.extend(search_eztv_by_imdb(imdb_id, args.limit * 2))
@@ -429,6 +520,10 @@ def main():
                 results.extend(search_eztv(args.query, args.limit * 2))
         if args.type == "music":
             results.extend(search_music(args.query, args.limit * 2, args.music_source))
+        if args.indexer in ("prowlarr", "all") and args.type != "music":
+            results.extend(search_prowlarr(args.query, args.type, args.limit * 2, args.season, args.episode))
+        if args.indexer in ("jackett", "all") and args.type != "music":
+            results.extend(search_jackett(args.query, args.type, args.limit * 2, args.season, args.episode))
 
     filtered = filter_and_sort(results, args.min_seeds, args.quality, args.sort,
                                season=args.season, episode=args.episode, episodes=episodes, release=args.release,

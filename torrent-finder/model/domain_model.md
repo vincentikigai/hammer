@@ -19,6 +19,7 @@ classDiagram
         +SortBy sort
         +int limit
         +MusicProvider musicSource
+        +IndexerBackend indexer
     }
 
     class MediaSource {
@@ -43,6 +44,14 @@ classDiagram
 
     class JamendoSource {
         +searchAudio(query) TorrentResult[]
+    }
+
+    class ProwlarrSource {
+        +searchTorznab(SearchRequest) TorrentResult[]
+    }
+
+    class JackettSource {
+        +searchTorznab(SearchRequest) TorrentResult[]
     }
 
     class ImdbTitleResolver {
@@ -71,9 +80,13 @@ classDiagram
     MediaSource <|.. EztvSource
     MediaSource <|.. InternetArchiveSource
     MediaSource <|.. JamendoSource
+    MediaSource <|.. ProwlarrSource
+    MediaSource <|.. JackettSource
     SearchRequest --> MediaSource : dispatched to
     SearchRequest --> InternetArchiveSource : music query
     SearchRequest --> JamendoSource : optional music query
+    SearchRequest --> ProwlarrSource : optional Torznab query
+    SearchRequest --> JackettSource : optional Torznab query
     SearchRequest --> ImdbTitleResolver : TV title resolution
     ImdbTitleResolver --> EztvSource : imdbId
     MediaSource --> TorrentResult : produces
@@ -136,3 +149,9 @@ Rather than a single pass/fail definition, quality is expressed as a **rank** (`
 
 ### 5. Music Uses Provider-Specific Download URLs
 Music is an explicit `type = music` mode so the default movie/TV workflow remains unchanged. Internet Archive is available without configuration and returns legal collection torrent URLs. Jamendo is optional because its API requires a client ID; when configured through `JAMENDO_CLIENT_ID`, it returns the direct audio URL supplied by Jamendo. Music is not subject to torrent seeder or resolution filters.
+
+### 6. Optional Torznab Indexers
+`--indexer prowlarr`, `--indexer jackett`, and `--indexer all` route movie/TV requests through the
+same Torznab result normalizer. The adapters are configured locally through environment variables,
+then map title, magnet/download URL, seeders, peers, size, and TV metadata into `TorrentResult`.
+Native YTS/EZTV is retained as the default backend; `all` combines it with every configured adapter.
