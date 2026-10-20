@@ -558,7 +558,7 @@ def search_torrentdownload(query, limit):
 
 def title_relevance(title, query):
     """Return a relevance score (higher = better match).
-    4 = exact title match
+    4 = exact title match (after stripping year/season/quality suffixes)
     3 = title starts with query (word boundary)
     2 = query is a whole word anywhere in title
     1 = query appears as substring anywhere (current behaviour)
@@ -567,8 +567,13 @@ def title_relevance(title, query):
     q = query.lower().strip()
     if t == q:
         return 4
-    # Strip common year/quality suffixes for prefix check
+    # Strip year, season/episode tags, and quality/codec suffixes to get the bare show name
     t_stripped = re.sub(r'[\s\-_.]+[\[(]?\d{4}[\])\-_.\s].*$', '', t).strip()
+    # Also strip trailing season/episode tokens like "-season-4", "s01", "complete"
+    t_stripped = re.sub(
+        r'[\s\-_.]+(?:s\d{1,2}(?:e\d{1,2})?|season[\s\-_.]\d+|complete|seasons?)[\s\-_.]*.*$',
+        '', t_stripped, flags=re.IGNORECASE
+    ).strip()
     if t_stripped == q:
         return 4
     if t.startswith(q) and (len(t) == len(q) or not t[len(q)].isalnum()):
@@ -576,6 +581,25 @@ def title_relevance(title, query):
     if re.search(r'(?<![a-z])' + re.escape(q) + r'(?![a-z])', t):
         return 2
     return 1
+
+
+def release_rank(result, season=None, episode=None):
+    """Return a release-type rank for tiebreaking within the same relevance tier.
+    When searching full pack (no season/episode filter):
+      2 = multi-season pack (covers the whole series)
+      1 = single-season release
+      0 = episode or unknown
+    When season is specified (but not episode), season packs rank highest.
+    Otherwise all releases are equal (0).
+    """
+    if season is not None or episode is not None:
+        return 0  # don't reorder when the user filtered to a specific season/ep
+    rel = extract_release_type(result["title"], result.get("episode"))
+    if rel == "pack":
+        return 2
+    if rel == "season":
+        return 1
+    return 0
 
 
 def filter_and_sort(results, min_seeds, quality, sort_by, season=None, episode=None, episodes=None, query=None,
@@ -610,9 +634,18 @@ def filter_and_sort(results, min_seeds, quality, sort_by, season=None, episode=N
 
     if query:
         if sort_by == "quality":
-            filtered.sort(key=lambda r: (title_relevance(r["title"], query), QUALITY_RANK.get(r["quality"], 0), r["seeds"]), reverse=True)
+            filtered.sort(key=lambda r: (
+                title_relevance(r["title"], query),
+                release_rank(r, season, episode),
+                QUALITY_RANK.get(r["quality"], 0),
+                r["seeds"]
+            ), reverse=True)
         else:
-            filtered.sort(key=lambda r: (title_relevance(r["title"], query), r["seeds"]), reverse=True)
+            filtered.sort(key=lambda r: (
+                title_relevance(r["title"], query),
+                release_rank(r, season, episode),
+                r["seeds"]
+            ), reverse=True)
     elif sort_by == "quality":
         filtered.sort(key=lambda r: (QUALITY_RANK.get(r["quality"], 0), r["seeds"]), reverse=True)
     else:

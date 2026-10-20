@@ -71,10 +71,15 @@ classDiagram
         +ReleaseSource mediaSource
         +int season
         +int episode
+        +int[] allEpisodes
         +int seeds
         +int peers
         +string size
         +string magnet
+    }
+
+    class TitleRelevanceScorer {
+        +score(title, query) int
     }
 
     class ResultFilter {
@@ -97,6 +102,7 @@ classDiagram
     ImdbTitleResolver --> EztvSource : imdbId
     MediaSource --> TorrentResult : produces
     TorrentResult --> ResultFilter : filtered by
+    TitleRelevanceScorer --> ResultFilter : score(title, query)
     ResultFilter --> TorrentResult : ranked output
 ```
 
@@ -134,7 +140,8 @@ flowchart TD
     FilterQuality --> FilterEpisode["Filter: season and one or more<br/>episode numbers (if requested)"]
     FilterEpisode --> FilterRelease["Filter: episode, full season,<br/>or multi-season pack"]
     FilterRelease --> FilterCodec["Filter: codec/source match<br/>(if requested)"]
-    FilterCodec --> Sort["Sort by seeds or<br/>quality rank"]
+    FilterCodec --> Rank["Rank by title relevance tier:<br/>exact → prefix → whole-word → substring"]
+    Rank --> Sort["Sort within tier by seeds or<br/>quality rank"]
     Sort --> Truncate["Truncate to limit"]
     Truncate --> Output(("Ranked TorrentResult[]"))
 ```
@@ -153,10 +160,23 @@ Each filter (`minSeeds`, `quality`, `season`, `episode`/`episodes`, `release`, `
 ### 4. "High Quality" is a Ranking, Not a Boolean
 Rather than a single pass/fail definition, quality is expressed as a **rank** (`2160p > 1080p > 720p > 480p > SD`) used for `--sort quality`. Combined with `--min-seeds`, this lets the user trade off resolution against download health rather than treating "high quality" as one fixed threshold.
 
-### 5. Music Uses Provider-Specific Download URLs
+### 5. Two-Tier Ranking: Relevance First, Seeds Second
+Results are sorted by a two-tier key: **title relevance** (primary) then **seed count** (secondary).
+Relevance is scored on four levels:
+
+| Score | Rule |
+|---|---|
+| 4 | Title exactly equals the query (year/quality suffix stripped) |
+| 3 | Title starts with the query at a word boundary |
+| 2 | Query appears as a whole word anywhere in the title |
+| 1 | Query appears as any substring (fallback) |
+
+This guarantees that `Friends Season 1` ranks above `Smiling Friends` even when the latter has more seeds. When `--sort quality`, quality rank is inserted between relevance and seeds: `(relevance ↓, quality ↓, seeds ↓)`.
+
+### 6. Music Uses Provider-Specific Download URLs
 Music is an explicit `type = music` mode so the default movie/TV workflow remains unchanged. Internet Archive is available without configuration and returns legal collection torrent URLs. Jamendo is optional because its API requires a client ID; when configured through `JAMENDO_CLIENT_ID`, it returns the direct audio URL supplied by Jamendo. Music is not subject to torrent seeder or resolution filters.
 
-### 6. Optional Torznab Indexers
+### 7. Optional Torznab Indexers
 `--indexer prowlarr`, `--indexer jackett`, and `--indexer all` route movie/TV requests through the
 same Torznab result normalizer. The adapters are configured locally through environment variables,
 then map title, magnet/download URL, seeders, peers, size, and TV metadata into `TorrentResult`.

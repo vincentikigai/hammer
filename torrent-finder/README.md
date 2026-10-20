@@ -146,6 +146,28 @@ Each torrent result includes the source, quality, seeds/peers, size, and a ready
 Music results include a `DOWNLOAD` URL rather than a magnet link. Internet Archive's URL points to
 the collection torrent; Jamendo's URL is a direct audio download when available.
 
+### Result Ranking
+
+Results are ranked by a **two-tier model**:
+
+1. **Title relevance** (primary) — how closely the torrent title matches your query:
+
+   | Score | Rule | Example query `"friends"` |
+   |---|---|---|
+   | ★★★★ | Title **exactly equals** the query (ignoring year/quality suffixes) | `Friends (1994)` |
+   | ★★★ | Title **starts with** the query at a word boundary | `Friends-1994-Season-1-Complete` |
+   | ★★ | Query appears as a **whole word** somewhere in the title | `Smiling Friends` |
+   | ★ | Query appears as any substring (fallback) | `Garfield & Friends` |
+
+2. **Seed count** (secondary) — within the same relevance tier, more-seeded results come first.
+
+This means `Friends Season 1` will always rank above `Smiling Friends Season 1-3 COMPLETE`, even if Smiling Friends has more seeds.
+
+When `--sort quality` is used, quality rank is inserted between relevance and seeds:
+`(relevance ↓, quality ↓, seeds ↓)`.
+
+---
+
 ### Known limitation
 
 EZTV's public API has no full-text search endpoint. For a TV title query, the tool first resolves
