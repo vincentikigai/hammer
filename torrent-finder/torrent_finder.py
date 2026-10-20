@@ -10,6 +10,17 @@ import urllib.request
 import json
 import xml.etree.ElementTree as ElementTree
 
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 YTS_HOSTS = ["yts.mx", "yts.am", "yts.lt"]
 EZTV_API = "https://eztv.re/api/get-torrents"
 TORRENTDOWNLOAD_FEED_URL = "https://www.torrentdownload.info/feed"
@@ -35,7 +46,7 @@ def http_get_json(url, params, timeout=15):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def http_get_json_retrying(url, params, timeout=25, retries=1):
+def http_get_json_retrying(url, params, timeout=10, retries=1):
     last_error = None
     for attempt in range(retries + 1):
         try:
@@ -61,13 +72,42 @@ def extract_season_episode(title, torrent=None):
     if torrent:
         season = torrent.get("season")
         episode = torrent.get("episode")
-        if season and episode and season.isdigit() and episode.isdigit():
+        if season and episode and str(season).isdigit() and str(episode).isdigit():
             return int(season), int(episode)
 
-    match = re.search(r"[Ss](\d{1,2})[Ee](\d{1,3})", title)
-    if not match:
-        return None, None
-    return int(match.group(1)), int(match.group(2))
+    # Standard S01E02 or 1x02
+    match = re.search(r"[Ss](\d{1,2})[Ee](\d{1,3})|\b(\d{1,2})x(\d{1,3})\b", title)
+    if match:
+        s = match.group(1) or match.group(3)
+        e = match.group(2) or match.group(4)
+        return int(s), int(e)
+
+    # Spelled out: Season 2 Episode 11 / Season 2 Ep 11 / Season 4 (Episodes 05-06)
+    match_words = re.search(r"season[-_.\s]*(\d{1,2})[-_.\s]*(?:episodes?|ep)[-_.\s]*(\d{1,3})", title, re.IGNORECASE)
+    if match_words:
+        return int(match_words.group(1)), int(match_words.group(2))
+
+    # Single season without episode (e.g. Season 2, S02)
+    s_match = re.search(r"(?:season[-_.\s]*(\d{1,2})|\b[Ss](\d{1,2}))(?!\d|[Ee]\d)", title, re.IGNORECASE)
+    if s_match:
+        return int(s_match.group(1) or s_match.group(2)), None
+
+    return None, None
+
+
+def extract_all_episodes(title):
+    episodes = set()
+    for m in re.finditer(r"[Ee](\d{1,3})|\b\d{1,2}x(\d{1,3})\b", title):
+        ep_str = m.group(1) or m.group(2)
+        if ep_str:
+            episodes.add(int(ep_str))
+    range_m = re.search(r"(?:episodes?|ep)[-_.\s]*(\d{1,3})[-_.\s]*[-–+to]+[-_.\s]*(\d{1,3})", title, re.IGNORECASE)
+    if range_m:
+        start = int(range_m.group(1))
+        end = int(range_m.group(2))
+        if start <= end:
+            episodes.update(range(start, end + 1))
+    return sorted(episodes)
 
 
 def extract_codec(title):
@@ -84,10 +124,12 @@ def extract_source(title):
 
 
 def extract_release_type(title, episode):
-    if re.search(r"\bpack\b|\bcomplete\b|[Ss]\d{1,2}\s*[-+]\s*[Ss]?\d{1,2}", title, re.IGNORECASE):
+    if re.search(r"\b(?:multi|series)\b|[Ss]\d{1,2}\s*[-+]\s*[Ss]?\d{1,2}|\bseasons?\s*\d+\s*[-+]\s*\d+|\[\d{1,3}\s*[-–+]\s*\d{1,3}\]", title, re.IGNORECASE):
         return "pack"
-    if episode is None and re.search(r"\bseason\s*\d+\b|[Ss]\d{1,2}(?![Ee]\d)", title, re.IGNORECASE):
+    if episode is None and re.search(r"(?:season[-_.\s]*\d+|\b[Ss]\d{1,2})(?![Ee]\d)", title, re.IGNORECASE):
         return "season"
+    if re.search(r"\bpack\b|\bcomplete\b", title, re.IGNORECASE):
+        return "pack"
     return "episode"
 
 
@@ -368,6 +410,8 @@ def search_eztv(query, limit):
             data = http_get_json_retrying(EZTV_API, {"limit": 100, "page": page})
         except Exception as exc:
             print(f"Warning: EZTV page {page} failed, skipping ({exc})", file=sys.stderr)
+            if page == 1:
+                break
             continue
 
         torrents = data.get("torrents") or []
@@ -387,6 +431,7 @@ def search_eztv(query, limit):
                 "media_source": extract_source(title),
                 "season": season,
                 "episode": episode,
+                "all_episodes": extract_all_episodes(title),
                 "seeds": torrent.get("seeds", 0),
                 "peers": torrent.get("peers", 0),
                 "size": format_size(int(torrent.get("size_bytes", 0) or 0)),
@@ -430,6 +475,7 @@ def search_eztv_by_imdb(imdb_id, limit):
                 "media_source": extract_source(title),
                 "season": season,
                 "episode": episode,
+                "all_episodes": extract_all_episodes(title),
                 "seeds": torrent.get("seeds", 0),
                 "peers": torrent.get("peers", 0),
                 "size": format_size(int(torrent.get("size_bytes", 0) or 0)),
@@ -488,6 +534,7 @@ def search_torrentdownload(query, limit):
         info_hash = hash_match.group(1) if hash_match else ""
 
         season, episode = extract_season_episode(title)
+        all_eps = extract_all_episodes(title)
 
         results.append({
             "source": "TD",
@@ -497,6 +544,7 @@ def search_torrentdownload(query, limit):
             "media_source": extract_source(title),
             "season": season,
             "episode": episode,
+            "all_episodes": all_eps,
             "seeds": seeds,
             "peers": peers,
             "size": size,
@@ -508,7 +556,29 @@ def search_torrentdownload(query, limit):
     return results
 
 
-def filter_and_sort(results, min_seeds, quality, sort_by, season=None, episode=None, episodes=None,
+def title_relevance(title, query):
+    """Return a relevance score (higher = better match).
+    4 = exact title match
+    3 = title starts with query (word boundary)
+    2 = query is a whole word anywhere in title
+    1 = query appears as substring anywhere (current behaviour)
+    """
+    t = title.lower().strip()
+    q = query.lower().strip()
+    if t == q:
+        return 4
+    # Strip common year/quality suffixes for prefix check
+    t_stripped = re.sub(r'[\s\-_.]+[\[(]?\d{4}[\])\-_.\s].*$', '', t).strip()
+    if t_stripped == q:
+        return 4
+    if t.startswith(q) and (len(t) == len(q) or not t[len(q)].isalnum()):
+        return 3
+    if re.search(r'(?<![a-z])' + re.escape(q) + r'(?![a-z])', t):
+        return 2
+    return 1
+
+
+def filter_and_sort(results, min_seeds, quality, sort_by, season=None, episode=None, episodes=None, query=None,
                     release="all", codec="any", media_source="any"):
     filtered = [r for r in results if not r.get("is_torrent", True) or r["seeds"] >= min_seeds]
     if quality != "all":
@@ -516,17 +586,34 @@ def filter_and_sort(results, min_seeds, quality, sort_by, season=None, episode=N
     if season is not None:
         filtered = [r for r in filtered if r.get("season") == season]
     if episode is not None:
-        filtered = [r for r in filtered if r.get("episode") == episode]
+        filtered = [r for r in filtered if r.get("episode") == episode or episode in r.get("all_episodes", [])]
     if episodes:
-        filtered = [r for r in filtered if r.get("episode") in episodes]
+        filtered = [r for r in filtered if r.get("episode") in episodes or any(e in episodes for e in r.get("all_episodes", []))]
     if release != "all":
-        filtered = [r for r in filtered if extract_release_type(r["title"], r.get("episode")) == release]
+        def matches_release(r):
+            if r.get("source") in ("YTS", "ARCHIVE", "JAMENDO"):
+                return True
+            rel = extract_release_type(r["title"], r.get("episode"))
+            if release == "episode":
+                return rel == "episode" or r.get("episode") is not None
+            if release == "season":
+                return r.get("episode") is None and rel in ("season", "pack")
+            if release == "pack":
+                return r.get("episode") is None and rel in ("pack", "season")
+            return rel == release
+
+        filtered = [r for r in filtered if matches_release(r)]
     if codec != "any":
         filtered = [r for r in filtered if r.get("codec", "any") == codec]
     if media_source != "any":
         filtered = [r for r in filtered if r.get("media_source", "any") == media_source]
 
-    if sort_by == "quality":
+    if query:
+        if sort_by == "quality":
+            filtered.sort(key=lambda r: (title_relevance(r["title"], query), QUALITY_RANK.get(r["quality"], 0), r["seeds"]), reverse=True)
+        else:
+            filtered.sort(key=lambda r: (title_relevance(r["title"], query), r["seeds"]), reverse=True)
+    elif sort_by == "quality":
         filtered.sort(key=lambda r: (QUALITY_RANK.get(r["quality"], 0), r["seeds"]), reverse=True)
     else:
         filtered.sort(key=lambda r: r["seeds"], reverse=True)
@@ -561,7 +648,8 @@ def print_results(results, limit):
     print(header)
     print("-" * len(header))
     for r in results[:limit]:
-        print(f'{r["source"]:<5} {r["quality"]:<8} {r["seeds"]:<7} {r["peers"]:<7} {str(r["size"]):<10} {r["title"]}')
+        title = r["title"].encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace")
+        print(f'{r["source"]:<5} {r["quality"]:<8} {r["seeds"]:<7} {r["peers"]:<7} {str(r["size"]):<10} {title}')
         if r["magnet"]:
             label = r.get("link_label", "MAGNET" if r.get("is_torrent", True) else "DOWNLOAD")
             print(f'      {label}: {r["magnet"]}')
@@ -573,26 +661,27 @@ def main():
                      "Only use this tool to find torrents you have the legal right to download."
     )
     parser.add_argument("query", nargs="?", default=None, help="Search keywords (movie or TV show title)")
-    parser.add_argument("--imdb", help="EZTV/TorrentDownload: look up by IMDb ID (e.g. tt0944947 or 944947)")
-    parser.add_argument("--type", choices=["movie", "tv", "music", "all"], default="all",
+    parser.add_argument("-imdb", "--imdb", help="EZTV/TorrentDownload: look up by IMDb ID (e.g. tt0944947 or 944947)")
+    parser.add_argument("-type", "--type", choices=["movie", "tv", "music", "all"], default="all",
                         help="Media type to search")
-    parser.add_argument("--music-source", choices=["archive", "jamendo", "all"], default="all",
+    parser.add_argument("-music-source", "--music-source", choices=["archive", "jamendo", "all"], default="all",
                         help="Music catalog to search (default: all configured sources)")
-    parser.add_argument("--indexer", choices=["native", "torrentdownload", "prowlarr", "jackett", "all"], default="native",
+    parser.add_argument("-indexer", "--indexer", choices=["native", "torrentdownload", "prowlarr", "jackett", "all"], default="native",
                         help="Torrent search backend (default: native APIs)")
-    parser.add_argument("--min-seeds", type=int, default=5, help="Minimum seeder count (default: 5)")
-    parser.add_argument("--quality", choices=["2160p", "1080p", "720p", "480p", "all"], default="all",
+    parser.add_argument("-min-seeds", "--min-seeds", type=int, default=None,
+                        help="Minimum seeder count (default: 5 for episodes/movies, 0 for season/tv packages)")
+    parser.add_argument("-quality", "--quality", choices=["2160p", "1080p", "720p", "480p", "all"], default="all",
                          help="Filter by resolution (default: all)")
-    parser.add_argument("--season", type=int, default=None, help="EZTV: filter by season number")
-    parser.add_argument("--episode", type=int, default=None, help="EZTV: filter by episode number")
-    parser.add_argument("--episodes", help="EZTV: filter by episodes, e.g. 1,3,5-7")
-    parser.add_argument("--release", choices=["episode", "season", "pack", "all"], default="all",
-                        help="EZTV: filter individual episodes, full seasons, or multi-season packs")
-    parser.add_argument("--codec", choices=["x264", "x265", "any"], default="any", help="Filter by video codec")
-    parser.add_argument("--source", choices=["web-dl", "webrip", "web", "hdtv", "bluray", "brrip", "any"],
+    parser.add_argument("-season", "--season", type=int, default=None, help="TV: filter by season number")
+    parser.add_argument("-episode", "--episode", type=int, default=None, help="TV: filter by episode number")
+    parser.add_argument("-episodes", "--episodes", help="TV: filter by episodes, e.g. 1,3,5-7")
+    parser.add_argument("-release", "--release", choices=["episode", "season", "pack", "all"], default=None,
+                        help="TV: filter individual episodes, full seasons, or multi-season packs (default: auto)")
+    parser.add_argument("-codec", "--codec", choices=["x264", "x265", "any"], default="any", help="Filter by video codec")
+    parser.add_argument("-source", "--source", choices=["web-dl", "webrip", "web", "hdtv", "bluray", "brrip", "any"],
                          default="any", help="Filter by release source")
-    parser.add_argument("--sort", choices=["seeds", "quality"], default="seeds", help="Sort order (default: seeds)")
-    parser.add_argument("--limit", type=int, default=20, help="Max results to display (default: 20)")
+    parser.add_argument("-sort", "--sort", choices=["seeds", "quality"], default="seeds", help="Sort order (default: seeds)")
+    parser.add_argument("-limit", "--limit", type=int, default=20, help="Max results to display (default: 20)")
     args = parser.parse_args()
 
     if not args.imdb and not args.query:
@@ -603,6 +692,34 @@ def main():
         episodes = parse_episode_list(args.episodes) if args.episodes else None
     except ValueError as exc:
         parser.error(str(exc))
+
+    has_episodes = args.episode is not None or bool(episodes)
+    has_season = args.season is not None
+
+    # Smart default for release mode:
+    # 1. If both --season and --episode(s) (or episode specified): only search specific season & episode
+    # 2. If only --season: search full season
+    # 3. If --type tv (no season, no episode): search full TV package
+    if args.release is not None:
+        effective_release = args.release
+    elif has_episodes:
+        effective_release = "episode"
+    elif has_season:
+        effective_release = "season"
+    elif args.type == "tv":
+        effective_release = "pack"
+    else:
+        effective_release = "all"
+
+    # Smart default for min_seeds:
+    # Full season and complete series torrents on public trackers often show 0-2 seeds,
+    # so default to 0 for packages/seasons unless explicitly specified.
+    if args.min_seeds is not None:
+        effective_min_seeds = args.min_seeds
+    elif effective_release in ("pack", "season"):
+        effective_min_seeds = 0
+    else:
+        effective_min_seeds = 5
 
     results = []
     query_for_td = args.query
@@ -629,6 +746,11 @@ def main():
                 results.extend(search_eztv(args.query, args.limit * 2))
         if args.indexer in ("native", "torrentdownload", "all") and (args.type in ("movie", "tv", "all") or args.indexer == "torrentdownload"):
             results.extend(search_torrentdownload(args.query, args.limit * 2))
+            if args.type == "tv":
+                if effective_release == "pack":
+                    results.extend(search_torrentdownload(f"{args.query} complete", args.limit * 2))
+                elif effective_release == "season" and args.season is not None:
+                    results.extend(search_torrentdownload(f"{args.query} season {args.season}", args.limit * 2))
         if args.type == "music":
             results.extend(search_music(args.query, args.limit * 2, args.music_source))
         if args.indexer in ("prowlarr", "all") and args.type != "music":
@@ -636,9 +758,9 @@ def main():
         if args.indexer in ("jackett", "all") and args.type != "music":
             results.extend(search_jackett(args.query, args.type, args.limit * 2, args.season, args.episode))
 
-    filtered = filter_and_sort(results, args.min_seeds, args.quality, args.sort,
-                               season=args.season, episode=args.episode, episodes=episodes, release=args.release,
-                               codec=args.codec, media_source=args.source)
+    filtered = filter_and_sort(results, effective_min_seeds, args.quality, args.sort,
+                               season=args.season, episode=args.episode, episodes=episodes, release=effective_release,
+                               codec=args.codec, media_source=args.source, query=args.query)
     print_results(filtered, args.limit)
 
 

@@ -34,11 +34,19 @@ the shared filters such as `--quality`, `--min-seeds`, `--sort`, and `--limit`.
 python3 torrent_finder.py "Inception" --type movie --quality 1080p --min-seeds 10
 ```
 
-**TV shows** use EZTV. A TV title is resolved to an exact IMDb TV-series ID automatically, then
-the tool retrieves EZTV's indexed catalog for that show. Use `--type tv` to search TV only. TV
-results also support `--imdb`, `--season`, `--episode`, `--episodes`, and `--release`.
+**TV shows** support smart release filtering based on your search intent:
+- **`--type tv`** alone searches **full TV packages** (multi-season packs and complete packages, excluding loose single episodes).
+- **`--type tv --season N`** searches **full season** packages for that specific season.
+- **`--type tv --season N --episode M`** (or `--episodes`) searches **specific season and episode** releases.
 
 ```bash
+# Find full TV package:
+python3 torrent_finder.py "Dinosaur Train" --type tv
+
+# Find full season 2:
+python3 torrent_finder.py "Dinosaur Train" --type tv --season 2
+
+# Find specific episodes:
 python3 torrent_finder.py "Numberblocks" --type tv --season 4 --episodes 1,3-5 --quality 720p
 ```
 
@@ -101,13 +109,13 @@ queries public APIs (YTS, EZTV, and TorrentDownload) without either local servic
 | `--type {movie,tv,music,all}` | Search movies, TV, music, or movies and TV | `all` |
 | `--music-source {archive,jamendo,all}` | Music catalog to query; Jamendo requires `JAMENDO_CLIENT_ID` | `all` |
 | `--indexer {native,torrentdownload,prowlarr,jackett,all}` | Torrent backend; Prowlarr/Jackett require local configuration | `native` |
-| `--min-seeds N` | Minimum seeder count to include a result | `5` |
+| `--min-seeds N` | Minimum seeder count to include a result (auto: `0` for season/packages, `5` for episodes/movies) | auto |
 | `--quality {2160p,1080p,720p,480p,all}` | Filter by resolution | `all` |
 | `--imdb ID` | Look up a TV show directly by IMDb ID | — |
-| `--season N` | Filter TV results by season number | — |
+| `--season N` | Filter TV results by season number (defaults to full season) | — |
 | `--episode N` | Filter TV results by one episode number | — |
 | `--episodes LIST` | Filter TV results by episodes, e.g. `1,3,5-7` | — |
-| `--release {episode,season,pack,all}` | Restrict TV results to individual episodes, full seasons, or packs | `all` |
+| `--release {episode,season,pack,all}` | Filter individual episodes, full seasons, or packs (defaults to auto based on intent) | auto |
 | `--codec {x264,x265,any}` | Filter by video codec | `any` |
 | `--source {web-dl,webrip,web,hdtv,bluray,brrip,any}` | Filter by release source | `any` |
 | `--sort {seeds,quality}` | Sort results by seeder count or resolution | `seeds` |
