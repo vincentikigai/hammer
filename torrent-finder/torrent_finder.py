@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Search and filter torrents by quality/seeders across public torrent APIs (YTS movies, EZTV TV shows)."""
+"""Search and filter torrents by quality/seeders across public torrent APIs (YTS movies, EZTV TV shows, TorrentDownload)."""
 import argparse
 import math
 import os
@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ElementTree
 
 YTS_HOSTS = ["yts.mx", "yts.am", "yts.lt"]
 EZTV_API = "https://eztv.re/api/get-torrents"
+TORRENTDOWNLOAD_FEED_URL = "https://www.torrentdownload.info/feed"
 IMDB_SUGGESTION_URL = "https://v3.sg.media-imdb.com/suggestion/x"
 INTERNET_ARCHIVE_SEARCH_API = "https://archive.org/advancedsearch.php"
 JAMENDO_TRACKS_API = "https://api.jamendo.com/v3.0/tracks/"
@@ -106,7 +107,8 @@ def parse_episode_list(value):
 
 
 def normalize_imdb_id(imdb_id):
-    return re.sub(r"^tt0*", "", imdb_id.strip(), flags=re.IGNORECASE)
+    imdb_id = re.sub(r"^tt", "", imdb_id.strip(), flags=re.IGNORECASE)
+    return imdb_id.zfill(7) if imdb_id.isdigit() and len(imdb_id) < 7 else imdb_id
 
 
 def resolve_tv_imdb_id(query):
@@ -123,6 +125,20 @@ def resolve_tv_imdb_id(query):
             continue
         if candidate.get("l", "").casefold().strip() == query_normalized:
             return candidate.get("id")
+    return None
+
+
+def resolve_imdb_title(imdb_id):
+    normalized = f"tt{normalize_imdb_id(imdb_id)}"
+    url = f"{IMDB_SUGGESTION_URL}/{urllib.parse.quote(normalized)}.json"
+    try:
+        data = http_get_json(url, {})
+    except Exception:
+        return None
+
+    for candidate in data.get("d", []):
+        if candidate.get("id") == normalized:
+            return candidate.get("l")
     return None
 
 
@@ -186,7 +202,7 @@ def search_torznab(endpoint, api_key, provider, query, media_type, limit, season
     }
     if media_type == "tv":
         if imdb_id:
-            params["imdbid"] = imdb_id if imdb_id.startswith("tt") else f"tt{imdb_id}"
+            params["imdbid"] = f"tt{normalize_imdb_id(imdb_id)}"
         if season is not None:
             params["season"] = season
         if episode is not None:
@@ -423,6 +439,75 @@ def search_eztv_by_imdb(imdb_id, limit):
     return results
 
 
+def search_torrentdownload(query, limit):
+    params = urllib.parse.urlencode({"q": query})
+    url = f"{TORRENTDOWNLOAD_FEED_URL}?{params}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        print(f"Warning: TorrentDownload search failed ({exc})", file=sys.stderr)
+        return []
+
+    # Strip any trailing scripts or non-XML elements appended by Cloudflare
+    end_tag = "</rss>"
+    pos = raw.rfind(end_tag)
+    if pos != -1:
+        raw = raw[: pos + len(end_tag)]
+
+    try:
+        root = ElementTree.fromstring(raw)
+    except Exception as exc:
+        print(f"Warning: TorrentDownload XML parse failed ({exc})", file=sys.stderr)
+        return []
+
+    results = []
+    for item in root.findall(".//item"):
+        title = item.findtext("title", "").strip()
+        link = item.findtext("link", "").strip()
+        desc = item.findtext("description", "")
+
+        size_match = re.search(r"Size:\s*([0-9.]+\s*[KMGT]?B)", desc, re.IGNORECASE)
+        size = size_match.group(1).strip() if size_match else "N/A"
+
+        seeds_match = re.search(r"Seeds:\s*(\d+)", desc, re.IGNORECASE)
+        seeds = int(seeds_match.group(1)) if seeds_match else 0
+
+        peers_match = re.search(r"Peers:\s*(\d+)", desc, re.IGNORECASE)
+        peers = int(peers_match.group(1)) if peers_match else 0
+
+        hash_match = re.search(r"Hash:\s*([A-Fa-f0-9]{40})", desc, re.IGNORECASE)
+        if not hash_match:
+            hash_match = re.search(r"/([A-Fa-f0-9]{40})(?:[/?#]|$)", link)
+        info_hash = hash_match.group(1) if hash_match else ""
+
+        season, episode = extract_season_episode(title)
+
+        results.append({
+            "source": "TD",
+            "title": title,
+            "quality": extract_quality(title),
+            "codec": extract_codec(title),
+            "media_source": extract_source(title),
+            "season": season,
+            "episode": episode,
+            "seeds": seeds,
+            "peers": peers,
+            "size": size,
+            "magnet": build_magnet(info_hash, title) if info_hash else link,
+            "link_label": "MAGNET" if info_hash else "DOWNLOAD",
+        })
+        if len(results) >= limit:
+            break
+    return results
+
+
 def filter_and_sort(results, min_seeds, quality, sort_by, season=None, episode=None, episodes=None,
                     release="all", codec="any", media_source="any"):
     filtered = [r for r in results if not r.get("is_torrent", True) or r["seeds"] >= min_seeds]
@@ -445,7 +530,26 @@ def filter_and_sort(results, min_seeds, quality, sort_by, season=None, episode=N
         filtered.sort(key=lambda r: (QUALITY_RANK.get(r["quality"], 0), r["seeds"]), reverse=True)
     else:
         filtered.sort(key=lambda r: r["seeds"], reverse=True)
-    return filtered
+
+    seen = set()
+    deduped = []
+    for r in filtered:
+        mag = r.get("magnet") or ""
+        key = None
+        if "xt=urn:btih:" in mag:
+            m = re.search(r"urn:btih:([a-fA-F0-9]{32,40})", mag)
+            if m:
+                key = m.group(1).lower()
+        if not key and mag:
+            key = mag
+        if not key:
+            key = r.get("title")
+
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(r)
+    return deduped
 
 
 def print_results(results, limit):
@@ -465,17 +569,16 @@ def print_results(results, limit):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Search and filter high quality torrents (movies via YTS, TV shows via EZTV). "
+        description="Search and filter high quality torrents (movies via YTS, TV shows via EZTV, and movies/TV/all via TorrentDownload). "
                      "Only use this tool to find torrents you have the legal right to download."
     )
     parser.add_argument("query", nargs="?", default=None, help="Search keywords (movie or TV show title)")
-    parser.add_argument("--imdb", help="EZTV: look up a TV show by IMDb ID (e.g. tt0944947 or 944947) "
-                                       "instead of scanning recent torrents by keyword")
+    parser.add_argument("--imdb", help="EZTV/TorrentDownload: look up by IMDb ID (e.g. tt0944947 or 944947)")
     parser.add_argument("--type", choices=["movie", "tv", "music", "all"], default="all",
                         help="Media type to search")
     parser.add_argument("--music-source", choices=["archive", "jamendo", "all"], default="all",
                         help="Music catalog to search (default: all configured sources)")
-    parser.add_argument("--indexer", choices=["native", "prowlarr", "jackett", "all"], default="native",
+    parser.add_argument("--indexer", choices=["native", "torrentdownload", "prowlarr", "jackett", "all"], default="native",
                         help="Torrent search backend (default: native APIs)")
     parser.add_argument("--min-seeds", type=int, default=5, help="Minimum seeder count (default: 5)")
     parser.add_argument("--quality", choices=["2160p", "1080p", "720p", "480p", "all"], default="all",
@@ -502,9 +605,15 @@ def main():
         parser.error(str(exc))
 
     results = []
+    query_for_td = args.query
+    if not query_for_td and args.imdb:
+        query_for_td = resolve_imdb_title(args.imdb)
+
     if args.imdb:
         if args.indexer in ("native", "all"):
             results.extend(search_eztv_by_imdb(args.imdb, args.limit * 2))
+        if query_for_td and args.indexer in ("native", "torrentdownload", "all"):
+            results.extend(search_torrentdownload(query_for_td, args.limit * 2))
         if args.indexer in ("prowlarr", "all"):
             results.extend(search_prowlarr(None, "tv", args.limit * 2, args.season, args.episode, args.imdb))
         if args.indexer in ("jackett", "all"):
@@ -518,6 +627,8 @@ def main():
                 results.extend(search_eztv_by_imdb(imdb_id, args.limit * 2))
             else:
                 results.extend(search_eztv(args.query, args.limit * 2))
+        if args.indexer in ("native", "torrentdownload", "all") and (args.type in ("movie", "tv", "all") or args.indexer == "torrentdownload"):
+            results.extend(search_torrentdownload(args.query, args.limit * 2))
         if args.type == "music":
             results.extend(search_music(args.query, args.limit * 2, args.music_source))
         if args.indexer in ("prowlarr", "all") and args.type != "music":

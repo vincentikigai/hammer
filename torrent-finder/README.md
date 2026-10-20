@@ -4,6 +4,7 @@ A lightweight, OS-independent CLI to search and filter high quality torrents acr
 
 - **YTS** (`yts.mx`) for movies
 - **EZTV** (`eztv.re`) for TV shows
+- **TorrentDownload** (`torrentdownload.info`) for movies, TV shows, and general releases (labeled `TD`)
 - **Internet Archive** (`archive.org`) for public-domain and Creative Commons music
 - **Jamendo** for Creative Commons music when configured with an API client ID
 - **Prowlarr** for configured, self-hosted Torznab indexers
@@ -91,7 +92,7 @@ python torrent_finder.py "Numberblocks" --type tv --indexer all --season 4 --min
 ```
 
 Use only indexers and content you are authorized to access. `--indexer native` is the default and
-continues to use YTS/EZTV without either local service.
+queries public APIs (YTS, EZTV, and TorrentDownload) without either local service.
 
 ### Options
 
@@ -99,7 +100,7 @@ continues to use YTS/EZTV without either local service.
 |---|---|---|
 | `--type {movie,tv,music,all}` | Search movies, TV, music, or movies and TV | `all` |
 | `--music-source {archive,jamendo,all}` | Music catalog to query; Jamendo requires `JAMENDO_CLIENT_ID` | `all` |
-| `--indexer {native,prowlarr,jackett,all}` | Torrent backend; Prowlarr/Jackett require local configuration | `native` |
+| `--indexer {native,torrentdownload,prowlarr,jackett,all}` | Torrent backend; Prowlarr/Jackett require local configuration | `native` |
 | `--min-seeds N` | Minimum seeder count to include a result | `5` |
 | `--quality {2160p,1080p,720p,480p,all}` | Filter by resolution | `all` |
 | `--imdb ID` | Look up a TV show directly by IMDb ID | — |
@@ -141,7 +142,9 @@ the collection torrent; Jamendo's URL is a direct audio download when available.
 
 EZTV's public API has no full-text search endpoint. For a TV title query, the tool first resolves
 an exact IMDb TV-series match and uses EZTV's `imdb_id` endpoint, paging through its indexed show
-catalog before filtering locally. If an exact title cannot be resolved, it falls back to scanning
-the latest ~500 EZTV entries, so older shows may not appear in that fallback mode. Use `--imdb`
-to select a specific show directly when a title is ambiguous.
+catalog before filtering locally. The catalog may omit older seasons, so a successful title lookup
+does not guarantee that every season is available. If an exact title cannot be resolved, it falls
+back to scanning the latest ~500 EZTV entries, so older shows may not appear in that fallback mode.
+Use a configured Prowlarr or Jackett indexer for broader archive coverage, or use `--imdb` to select
+a specific show directly when a title is ambiguous.
 

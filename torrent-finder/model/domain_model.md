@@ -38,6 +38,11 @@ classDiagram
         +fetchByImdbId(imdbId) TorrentResult[]
     }
 
+    class TorrentDownloadSource {
+        +feedUrl
+        +searchFeed(query) TorrentResult[]
+    }
+
     class InternetArchiveSource {
         +searchAudio(query) TorrentResult[]
     }
@@ -78,6 +83,7 @@ classDiagram
 
     MediaSource <|.. YtsSource
     MediaSource <|.. EztvSource
+    MediaSource <|.. TorrentDownloadSource
     MediaSource <|.. InternetArchiveSource
     MediaSource <|.. JamendoSource
     MediaSource <|.. ProwlarrSource
